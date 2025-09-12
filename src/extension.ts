@@ -18,6 +18,7 @@ import { cmdAddRole, cmdAddUser, cmdRoleOperations, cmdDropRole, cmdEditRole, cm
 import { cmdViewOperations, cmdDropView, cmdEditView, cmdShowViewProperties, cmdViewData } from './subscriptions/views';
 import { cmdDisconnectDatabase, cmdDisconnectConnection, cmdConnectDatabase } from './subscriptions/connection';
 import { cmdCreateDatabase, cmdDropDatabase } from './subscriptions/database';
+import { migrateExistingPasswords } from './password';
 
 export async function activate(context: vscode.ExtensionContext) {
     console.log('postgres-explorer: Activating extension');
@@ -342,27 +343,4 @@ export async function activate(context: vscode.ExtensionContext) {
             vscode.commands.registerCommand(command, callback)
         );
     });
-}
-
-async function migrateExistingPasswords(context: vscode.ExtensionContext) {
-    try {
-        const config = vscode.workspace.getConfiguration();
-        const connections = config.get<any[]>('postgresExplorer.connections') || [];
-
-        // First remove passwords from settings to ensure they don't persist
-        const sanitizedConnections = connections.map(({ password, ...connWithoutPassword }) => connWithoutPassword);
-        await config.update('postgresExplorer.connections', sanitizedConnections, vscode.ConfigurationTarget.Global);
-
-        // Then store passwords in SecretStorage
-        for (const conn of connections) {
-            if (conn.password) {
-                await context.secrets.store(`postgres-password-${conn.id}`, conn.password);
-            }
-        }
-
-        return true;
-    } catch (error) {
-        console.error('Failed to migrate passwords:', error);
-        return false;
-    }
 }

@@ -7,3 +7,5 @@ pat
 *.vsix
 dist
 pat-open-vsx
+.vscode-test/
+*.log
