@@ -27,6 +27,7 @@ import { DatabaseTreeItem, DatabaseTreeProvider } from './providers/DatabaseTree
 import { PostgresKernel } from './providers/NotebookKernel';
 import { ConnectionManager } from './services/ConnectionManager';
 import { SecretStorageService } from './services/SecretStorageService';
+import { ErrorHandlers } from './commands/helper';
 
 export let outputChannel: vscode.OutputChannel;
 
@@ -50,7 +51,7 @@ export async function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(treeView);
 
     // Register the chat view provider
-    const chatViewProvider = new ChatViewProvider(context.extensionUri);
+    const chatViewProvider = new ChatViewProvider(context.extensionUri, context);
     context.subscriptions.push(
         vscode.window.registerWebviewViewProvider(
             ChatViewProvider.viewType,
@@ -654,7 +655,7 @@ export async function activate(context: vscode.ExtensionContext) {
                 // Get connection from notebook metadata
                 const metadata = notebook.metadata as PostgresMetadata;
                 if (!metadata?.connectionId) {
-                    vscode.window.showErrorMessage('No connection found in notebook metadata');
+                    await ErrorHandlers.handleCommandError(new Error('No connection found in notebook metadata'), 'execute background update');
                     return;
                 }
 
@@ -682,7 +683,7 @@ export async function activate(context: vscode.ExtensionContext) {
                     } catch (err: any) {
                         console.error('Extension: Statement error:', err.message);
                         errorCount++;
-                        vscode.window.showErrorMessage(`Update failed: ${err.message}`);
+                        await ErrorHandlers.handleCommandError(err, 'execute update statement');
                     }
                 }
 
@@ -693,7 +694,7 @@ export async function activate(context: vscode.ExtensionContext) {
                 }
             } catch (err: any) {
                 console.error('Extension: Background update error:', err);
-                vscode.window.showErrorMessage(`Failed to execute updates: ${err.message}`);
+                await ErrorHandlers.handleCommandError(err, 'execute background updates');
             }
         } else if (message.type === 'script_delete') {
             console.log('Extension: Processing script_delete from renderer');
@@ -730,7 +731,7 @@ export async function activate(context: vscode.ExtensionContext) {
                 workspaceEdit.set(notebook.uri, [edit]);
                 await vscode.workspace.applyEdit(workspaceEdit);
             } catch (err: any) {
-                vscode.window.showErrorMessage(`Failed to generate delete script: ${err.message}`);
+                await ErrorHandlers.handleCommandError(err, 'generate delete script');
                 console.error('Extension: Script delete error:', err);
             }
         }

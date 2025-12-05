@@ -4,6 +4,13 @@ import { createAndShowNotebook, createMetadata, getConnectionWithPassword, valid
 import { DatabaseTreeItem, DatabaseTreeProvider } from '../providers/DatabaseTreeProvider';
 import { ConnectionManager } from '../services/ConnectionManager';
 import { TablePropertiesPanel } from '../tableProperties';
+import { 
+    MarkdownUtils, 
+    FormatHelpers, 
+    ErrorHandlers, 
+    SQL_TEMPLATES, 
+    ObjectUtils
+} from './helper';
 
 /**
  * SCHEMA_INFO_QUERY - Query to get schema information including size, object counts, and privileges
@@ -50,37 +57,183 @@ export async function cmdCreateSchema(item: DatabaseTreeItem, context: vscode.Ex
         });
         const metadata = createMetadata(connectionConfig, item.databaseName);
 
-        const cells = [
-            new vscode.NotebookCellData(
-                vscode.NotebookCellKind.Markup,
-                `### Create New Schema in Database: \`${item.label}\`
+        const databaseName = item.label;
 
-<div style="font-size: 12px; background-color: #2b3a42; border-left: 3px solid #3498db; padding: 6px 10px; margin-bottom: 15px; border-radius: 3px;">
-    <strong>ℹ️ Note:</strong> Execute the cell below to create a new schema. Modify the schema name and permissions as needed.
-</div>`,
-                'markdown'
-            ),
+        const markdown = MarkdownUtils.header(`➕ Create New Schema in Database: \`${databaseName}\``) +
+            MarkdownUtils.infoBox('This notebook provides templates for creating schemas. Modify the templates below and execute to create schemas.') +
+            `\n\n#### 📋 Schema Design Guidelines\n\n` +
+            MarkdownUtils.operationsTable([
+                { operation: '<strong>Naming</strong>', description: 'Use lowercase names (e.g., app_data, analytics, reporting). Avoid reserved names like "public".' },
+                { operation: '<strong>Purpose</strong>', description: 'Organize database objects logically. Use schemas to separate applications, environments, or features' },
+                { operation: '<strong>Security</strong>', description: 'Control access with GRANT/REVOKE. Use schemas for multi-tenant applications' },
+                { operation: '<strong>Search Path</strong>', description: 'Set search_path to include schemas in order of preference' },
+                { operation: '<strong>Ownership</strong>', description: 'Assign appropriate owners. Owners can create objects and grant privileges' }
+            ]) +
+            `\n\n#### 🏷️ Common Schema Patterns\n\n` +
+            MarkdownUtils.propertiesTable({
+                'Application Schema': 'Separate schema per application (e.g., app1, app2)',
+                'Feature Schema': 'Schema per feature/module (e.g., billing, inventory)',
+                'Environment Schema': 'Schema per environment (e.g., dev, staging, prod)',
+                'Tenant Schema': 'Schema per tenant in multi-tenant applications',
+                'Archive Schema': 'Schema for historical/archived data',
+                'Reporting Schema': 'Schema for reporting views and materialized views'
+            }) +
+            MarkdownUtils.successBox('Schemas provide logical organization and security boundaries. Use them to organize large databases and control access.') +
+            `\n\n---`;
+
+        const cells = [
+            new vscode.NotebookCellData(vscode.NotebookCellKind.Markup, markdown, 'markdown'),
             new vscode.NotebookCellData(
                 vscode.NotebookCellKind.Markup,
-                `##### 📝 Schema Definition`,
+                `##### 📝 Basic Schema (Recommended Start)`,
                 'markdown'
             ),
             new vscode.NotebookCellData(
                 vscode.NotebookCellKind.Code,
-                `-- Create new schema
+                `-- Create basic schema
 CREATE SCHEMA schema_name;
 
---Grant permissions(optional)
-GRANT USAGE ON SCHEMA schema_name TO role_name;
-GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA schema_name TO role_name;
-GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA schema_name TO role_name; `,
+-- Add comment
+COMMENT ON SCHEMA schema_name IS 'Description of the schema purpose';
+
+-- Grant basic usage (modify as needed)
+GRANT USAGE ON SCHEMA schema_name TO PUBLIC;
+-- GRANT CREATE ON SCHEMA schema_name TO role_name;`,
                 'sql'
+            ),
+            new vscode.NotebookCellData(
+                vscode.NotebookCellKind.Markup,
+                `##### 🔐 Schema with Permissions`,
+                'markdown'
+            ),
+            new vscode.NotebookCellData(
+                vscode.NotebookCellKind.Code,
+                `-- Create schema with owner
+CREATE SCHEMA schema_name
+    AUTHORIZATION owner_role;
+
+-- Grant permissions to roles
+GRANT USAGE ON SCHEMA schema_name TO app_role;
+GRANT CREATE ON SCHEMA schema_name TO app_role;
+
+-- Grant privileges on all existing tables
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA schema_name TO app_role;
+
+-- Grant privileges on all sequences
+GRANT SELECT, USAGE ON ALL SEQUENCES IN SCHEMA schema_name TO app_role;
+
+-- Grant execute on all functions
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA schema_name TO app_role;`,
+                'sql'
+            ),
+            new vscode.NotebookCellData(
+                vscode.NotebookCellKind.Markup,
+                `##### 🔄 Default Privileges Setup`,
+                'markdown'
+            ),
+            new vscode.NotebookCellData(
+                vscode.NotebookCellKind.Code,
+                `-- Set default privileges for future objects
+-- This ensures new objects automatically get the right permissions
+
+-- Default privileges on tables
+ALTER DEFAULT PRIVILEGES IN SCHEMA schema_name
+    GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO app_role;
+
+-- Default privileges on sequences
+ALTER DEFAULT PRIVILEGES IN SCHEMA schema_name
+    GRANT SELECT, USAGE ON SEQUENCES TO app_role;
+
+-- Default privileges on functions
+ALTER DEFAULT PRIVILEGES IN SCHEMA schema_name
+    GRANT EXECUTE ON FUNCTIONS TO app_role;
+
+-- Default privileges on types
+ALTER DEFAULT PRIVILEGES IN SCHEMA schema_name
+    GRANT USAGE ON TYPES TO app_role;`,
+                'sql'
+            ),
+            new vscode.NotebookCellData(
+                vscode.NotebookCellKind.Markup,
+                `##### 🏢 Multi-Tenant Schema Pattern`,
+                'markdown'
+            ),
+            new vscode.NotebookCellData(
+                vscode.NotebookCellKind.Code,
+                `-- Create schema for tenant isolation
+CREATE SCHEMA tenant_123;
+
+-- Grant tenant-specific access
+GRANT USAGE ON SCHEMA tenant_123 TO tenant_123_role;
+
+-- Grant privileges on all objects
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA tenant_123 TO tenant_123_role;
+GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA tenant_123 TO tenant_123_role;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA tenant_123 TO tenant_123_role;
+
+-- Set default privileges for future objects
+ALTER DEFAULT PRIVILEGES IN SCHEMA tenant_123
+    GRANT ALL ON TABLES TO tenant_123_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA tenant_123
+    GRANT ALL ON SEQUENCES TO tenant_123_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA tenant_123
+    GRANT EXECUTE ON FUNCTIONS TO tenant_123_role;`,
+                'sql'
+            ),
+            new vscode.NotebookCellData(
+                vscode.NotebookCellKind.Markup,
+                `##### 📊 Reporting Schema Pattern`,
+                'markdown'
+            ),
+            new vscode.NotebookCellData(
+                vscode.NotebookCellKind.Code,
+                `-- Create schema for reporting/analytics
+CREATE SCHEMA reporting;
+
+-- Grant read-only access to reporting role
+GRANT USAGE ON SCHEMA reporting TO reporting_role;
+
+-- Grant SELECT on all tables and views
+GRANT SELECT ON ALL TABLES IN SCHEMA reporting TO reporting_role;
+
+-- Set default privileges for future objects (read-only)
+ALTER DEFAULT PRIVILEGES IN SCHEMA reporting
+    GRANT SELECT ON TABLES TO reporting_role;
+
+-- Create materialized views in reporting schema
+-- CREATE MATERIALIZED VIEW reporting.sales_summary AS ...;`,
+                'sql'
+            ),
+            new vscode.NotebookCellData(
+                vscode.NotebookCellKind.Markup,
+                `##### 🔍 Search Path Configuration`,
+                'markdown'
+            ),
+            new vscode.NotebookCellData(
+                vscode.NotebookCellKind.Code,
+                `-- Set search path for current session
+SET search_path TO schema_name, public;
+
+-- Set search path for a role (persistent)
+ALTER ROLE role_name SET search_path = schema_name, public;
+
+-- Set search path for a database (affects all connections)
+ALTER DATABASE database_name SET search_path = schema_name, public;
+
+-- View current search path
+SHOW search_path;`,
+                'sql'
+            ),
+            new vscode.NotebookCellData(
+                vscode.NotebookCellKind.Markup,
+                MarkdownUtils.warningBox('After creating a schema, remember to: 1) Grant appropriate permissions, 2) Set up default privileges for future objects, 3) Configure search_path if needed, 4) Document the schema purpose with comments.'),
+                'markdown'
             )
         ];
 
         await createAndShowNotebook(cells, metadata);
     } catch (err: any) {
-        vscode.window.showErrorMessage(`Failed to create schema notebook: ${err.message} `);
+        await ErrorHandlers.handleCommandError(err, 'create schema notebook');
     }
 }
 
@@ -121,11 +274,8 @@ export async function cmdCreateObjectInSchema(item: DatabaseTreeItem, context: v
             const cells = [
                 new vscode.NotebookCellData(
                     vscode.NotebookCellKind.Markup,
-                    `### Create New ${selection.label} in Schema: \`${item.schema}\`
-
-<div style="font-size: 12px; background-color: #2b3a42; border-left: 3px solid #3498db; padding: 6px 10px; margin-bottom: 15px; border-radius: 3px;">
-    <strong>ℹ️ Note:</strong> Modify the definition below and execute the cell to create the ${selection.label.toLowerCase()}.
-</div>`,
+                    MarkdownUtils.header(`➕ Create New ${selection.label} in Schema: \`${item.schema}\``) +
+                    MarkdownUtils.infoBox(`Modify the definition below and execute the cell to create the ${selection.label.toLowerCase()}.`),
                     'markdown'
                 ),
                 new vscode.NotebookCellData(
@@ -143,7 +293,7 @@ export async function cmdCreateObjectInSchema(item: DatabaseTreeItem, context: v
             await createAndShowNotebook(cells, metadata);
         }
     } catch (err: any) {
-        vscode.window.showErrorMessage(`Failed to create notebook: ${err.message} `);
+        await ErrorHandlers.handleCommandError(err, 'create notebook');
     }
 }
 
@@ -180,20 +330,15 @@ export async function cmdSchemaOperations(item: DatabaseTreeItem, context: vscod
             const cells = [
                 new vscode.NotebookCellData(
                     vscode.NotebookCellKind.Markup,
-                    `### Schema: \`${item.schema}\`
-
-<div style="font-size: 12px; background-color: #2b3a42; border-left: 3px solid #3498db; padding: 6px 10px; margin-bottom: 15px; border-radius: 3px;">
-    <strong>ℹ️ Note:</strong> This notebook contains operations for managing the schema. Execute the cells below to perform operations.
-</div>
-
-#### 📊 Schema Information
-
-<table style="font-size: 11px; width: 100%; border-collapse: collapse;">
-    <tr><td style="font-weight: bold; width: 100px;">Owner:</td><td>${info.owner}</td></tr>
-    <tr><td style="font-weight: bold;">Total Size:</td><td>${info.total_size}</td></tr>
-    <tr><td style="font-weight: bold;">Objects:</td><td>${info.tables_count} tables, ${info.views_count} views, ${info.functions_count} functions</td></tr>
-    <tr><td style="font-weight: bold;">Privileges:</td><td>${privilegesText}</td></tr>
-</table>`,
+                    MarkdownUtils.header(`🗂️ Schema Operations: \`${item.schema}\``) +
+                    MarkdownUtils.infoBox('This notebook contains operations for managing the schema. Execute the cells below to perform operations.') +
+                    `\n\n#### 📊 Schema Information\n\n` +
+                    MarkdownUtils.propertiesTable({
+                        'Owner': info.owner,
+                        'Total Size': info.total_size,
+                        'Objects': `${info.tables_count} tables, ${info.views_count} views, ${info.functions_count} functions`,
+                        'Privileges': privilegesText
+                    }),
                     'markdown'
                 ),
                 new vscode.NotebookCellData(
@@ -330,7 +475,7 @@ DROP SCHEMA ${item.schema}; --This will fail if schema is not empty
             // Connection is managed by ConnectionManager, no need to close
         }
     } catch (err: any) {
-        vscode.window.showErrorMessage(`Failed to create schema operations notebook: ${err.message} `);
+        await ErrorHandlers.handleCommandError(err, 'create schema operations notebook');
     }
 }
 
@@ -504,38 +649,30 @@ export async function cmdShowSchemaProperties(item: DatabaseTreeItem, context: v
                                 (parseInt(objects.function_count) || 0) + 
                                 (parseInt(objects.type_count) || 0);
 
-            const markdown = `### 🗂️ Schema Properties: \`${item.schema}\`
+            const ownerInfo = `${schema.owner} | <strong>Database:</strong> ${item.databaseName}${schema.comment ? ` | <strong>Comment:</strong> ${schema.comment}` : ''}`;
+            const markdown = MarkdownUtils.header(`🗂️ Schema Properties: \`${item.schema}\``) +
+                MarkdownUtils.infoBox(`<strong>Owner:</strong> ${ownerInfo}`) +
+                `\n\n#### 💾 Size & Statistics\n\n` +
+                MarkdownUtils.propertiesTable({
+                    'Total Size': sizes.total_size || 'N/A',
+                    'Table Size': sizes.table_size || 'N/A',
+                    'Index Size': sizes.indexes_size || 'N/A',
+                    'Total Objects': totalObjects.toLocaleString()
+                }) +
+                `\n\n#### 📦 Object Breakdown\n\n` +
+                MarkdownUtils.propertiesTable({
+                    '📊 Tables': `${objects.table_count || 0}`,
+                    '📋 Views': `${objects.view_count || 0}`,
+                    '📈 Materialized Views': `${objects.matview_count || 0}`,
+                    '🔢 Sequences': `${objects.sequence_count || 0}`,
+                    '🔗 Foreign Tables': `${objects.foreign_table_count || 0}`,
+                    '📂 Partitioned Tables': `${objects.partitioned_table_count || 0}`,
+                    '⚙️ Functions': `${objects.function_count || 0}`,
+                    '🏷️ Types': `${objects.type_count || 0}`,
+                    '⚡ Triggers': `${objects.trigger_count || 0}`
+                });
 
-<div style="font-size: 12px; background-color: #2b3a42; border-left: 3px solid #3498db; padding: 6px 10px; margin-bottom: 15px; border-radius: 3px;">
-    <strong>ℹ️ Owner:</strong> ${schema.owner} | <strong>Database:</strong> ${item.databaseName}${schema.comment ? ` | <strong>Comment:</strong> ${schema.comment}` : ''}
-</div>
-
-#### 💾 Size & Statistics
-
-<table style="font-size: 11px; width: 100%; border-collapse: collapse;">
-    <tr><th style="text-align: left; width: 30%;">Metric</th><th style="text-align: left;">Value</th></tr>
-    <tr><td><strong>Total Size</strong></td><td>${sizes.total_size || 'N/A'}</td></tr>
-    <tr><td><strong>Table Size</strong></td><td>${sizes.table_size || 'N/A'}</td></tr>
-    <tr><td><strong>Index Size</strong></td><td>${sizes.indexes_size || 'N/A'}</td></tr>
-    <tr><td><strong>Total Objects</strong></td><td>${totalObjects.toLocaleString()}</td></tr>
-</table>
-
-#### 📦 Object Breakdown
-
-<table style="font-size: 11px; width: 100%; border-collapse: collapse;">
-    <tr><th style="text-align: left; width: 40%;">Object Type</th><th style="text-align: left;">Count</th></tr>
-    <tr><td>📊 <strong>Tables</strong></td><td>${objects.table_count || 0}</td></tr>
-    <tr><td>📋 <strong>Views</strong></td><td>${objects.view_count || 0}</td></tr>
-    <tr><td>📈 <strong>Materialized Views</strong></td><td>${objects.matview_count || 0}</td></tr>
-    <tr><td>🔢 <strong>Sequences</strong></td><td>${objects.sequence_count || 0}</td></tr>
-    <tr><td>🔗 <strong>Foreign Tables</strong></td><td>${objects.foreign_table_count || 0}</td></tr>
-    <tr><td>📂 <strong>Partitioned Tables</strong></td><td>${objects.partitioned_table_count || 0}</td></tr>
-    <tr><td>⚙️ <strong>Functions</strong></td><td>${objects.function_count || 0}</td></tr>
-    <tr><td>🏷️ <strong>Types</strong></td><td>${objects.type_count || 0}</td></tr>
-    <tr><td>⚡ <strong>Triggers</strong></td><td>${objects.trigger_count || 0}</td></tr>
-</table>
-
-${topObjects.length > 0 ? `#### 📊 Largest Objects (Top 10)
+                (topObjects.length > 0 ? `#### 📊 Largest Objects (Top 10)
 
 <table style="font-size: 11px; width: 100%; border-collapse: collapse;">
     <tr>
@@ -546,7 +683,8 @@ ${topObjects.length > 0 ? `#### 📊 Largest Objects (Top 10)
 ${objectRows}
 </table>
 
-` : ''}${privileges.length > 0 ? `#### 🔐 Privileges & Permissions (${privileges.length} grantees)
+` : '') +
+                (privileges.length > 0 ? `#### 🔐 Privileges & Permissions (${privileges.length} grantees)
 
 <table style="font-size: 11px; width: 100%; border-collapse: collapse;">
     <tr>
@@ -557,7 +695,8 @@ ${objectRows}
 ${privilegeRows}
 </table>
 
-` : ''}${extensions.length > 0 ? `#### 🧩 Extensions in Schema
+` : '') +
+                (extensions.length > 0 ? `#### 🧩 Extensions in Schema
 
 <table style="font-size: 11px; width: 100%; border-collapse: collapse;">
     <tr>
@@ -568,7 +707,8 @@ ${privilegeRows}
 ${extensionRows}
 </table>
 
-` : ''}---`;
+` : '') +
+                '---';
 
             const cells = [
                 new vscode.NotebookCellData(vscode.NotebookCellKind.Markup, markdown, 'markdown'),
@@ -741,6 +881,6 @@ ORDER BY (n_tup_ins + n_tup_upd + n_tup_del) DESC;`,
             // Do not close shared client
         }
     } catch (err: any) {
-        vscode.window.showErrorMessage(`Failed to show schema properties: ${err.message}`);
+        await ErrorHandlers.handleCommandError(err, 'show schema properties');
     }
 }

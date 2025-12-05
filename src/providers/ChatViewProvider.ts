@@ -1,12 +1,44 @@
+/**
+ * Chat View Provider - Main controller for the SQL Chat Assistant
+ * 
+ * This is the refactored version that uses modular services:
+ * - DbObjectService: Handles database object fetching for @ mentions
+ * - AiService: Handles AI provider integration
+ * - SessionService: Handles chat session storage
+ * - webviewHtml: Provides the webview HTML template
+ */
 import * as vscode from 'vscode';
+import { 
+    ChatMessage, 
+    FileAttachment, 
+    DbMention, 
+    DbObject,
+    DbObjectService,
+    AiService,
+    SessionService,
+    getWebviewHtml
+} from './chat';
 
 export class ChatViewProvider implements vscode.WebviewViewProvider {
     public static readonly viewType = 'postgresExplorer.chatView';
 
     private _view?: vscode.WebviewView;
-    private _messages: { role: 'user' | 'assistant'; content: string }[] = [];
+    private _messages: ChatMessage[] = [];
+    private _isProcessing = false;
+    
+    // Services
+    private _dbObjectService: DbObjectService;
+    private _aiService: AiService;
+    private _sessionService: SessionService;
 
-    constructor(private readonly _extensionUri: vscode.Uri) {}
+    constructor(
+        private readonly _extensionUri: vscode.Uri, 
+        context: vscode.ExtensionContext
+    ) {
+        this._dbObjectService = new DbObjectService();
+        this._aiService = new AiService();
+        this._sessionService = new SessionService(context);
+    }
 
     public resolveWebviewView(
         webviewView: vscode.WebviewView,
@@ -20,35 +52,350 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             localResourceRoots: [this._extensionUri]
         };
 
-        webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
+        webviewView.webview.html = getWebviewHtml(webviewView.webview);
+
+        // Send initial history
+        setTimeout(() => this._sendHistoryToWebview(), 100);
 
         webviewView.webview.onDidReceiveMessage(async (data) => {
             switch (data.type) {
                 case 'sendMessage':
-                    await this._handleUserMessage(data.message);
+                    await this._handleUserMessage(data.message, data.attachments, data.mentions);
                     break;
                 case 'clearChat':
                     this._messages = [];
+                    this._sessionService.clearCurrentSession();
                     this._updateChatHistory();
+                    break;
+                case 'newChat':
+                    await this._saveCurrentSession();
+                    this._messages = [];
+                    this._sessionService.clearCurrentSession();
+                    this._updateChatHistory();
+                    this._sendHistoryToWebview();
+                    break;
+                case 'pickFile':
+                    await this._handleFilePick();
+                    break;
+                case 'loadSession':
+                    await this._loadSession(data.sessionId);
+                    break;
+                case 'deleteSession':
+                    console.log('[ChatView] Received deleteSession request for:', data.sessionId);
+                    await this._deleteSession(data.sessionId);
+                    break;
+                case 'getHistory':
+                    this._sendHistoryToWebview();
+                    break;
+                case 'searchDbObjects':
+                    await this._handleSearchDbObjects(data.query);
+                    break;
+                case 'getDbObjectDetails':
+                    await this._handleGetDbObjectDetails(data.object);
+                    break;
+                case 'getDbObjects':
+                    await this._handleGetAllDbObjects();
                     break;
             }
         });
     }
 
-    private async _handleUserMessage(message: string) {
+    // ==================== Message Handling ====================
+
+    private async _handleUserMessage(message: string, attachments?: FileAttachment[], mentions?: DbMention[]) {
+        if (this._isProcessing) {
+            return;
+        }
+
+        this._isProcessing = true;
+        
+        console.log('[ChatView] ========== HANDLING USER MESSAGE ==========');
+        console.log('[ChatView] Message:', message);
+        console.log('[ChatView] Attachments:', attachments?.length || 0);
+        console.log('[ChatView] Mentions:', mentions?.length || 0);
+        if (mentions && mentions.length > 0) {
+            console.log('[ChatView] Mention details:', JSON.stringify(mentions, null, 2));
+        }
+
+        // Build message with attachments
+        let fullMessage = message;
+        if (attachments && attachments.length > 0) {
+            const attachmentTexts = attachments.map(att => 
+                `\n\n📎 **Attached File: ${att.name}** (${att.type})\n\`\`\`${att.type}\n${att.content}\n\`\`\``
+            ).join('');
+            fullMessage = message + attachmentTexts;
+        }
+
+        // Process @ mentions - add schema context for AI
+        let aiMessage = fullMessage;
+        if (mentions && mentions.length > 0) {
+            console.log('[ChatView] Processing mentions for schema context...');
+            let schemaContext = '\n\n=== DATABASE SCHEMA CONTEXT (Use this information to answer the question) ===\n';
+            
+            for (const mention of mentions) {
+                console.log('[ChatView] Fetching schema for:', mention.schema + '.' + mention.name, 'type:', mention.type, 'connectionId:', mention.connectionId);
+                const obj: DbObject = {
+                    name: mention.name,
+                    type: mention.type,
+                    schema: mention.schema,
+                    database: mention.database,
+                    connectionId: mention.connectionId,
+                    connectionName: '',
+                    breadcrumb: mention.breadcrumb
+                };
+                
+                try {
+                    const schemaInfo = await this._dbObjectService.getObjectSchema(obj);
+                    mention.schemaInfo = schemaInfo;
+                    schemaContext += `\n### ${mention.type.toUpperCase()}: ${mention.schema}.${mention.name}\n`;
+                    schemaContext += schemaInfo;
+                    schemaContext += '\n';
+                    console.log('[ChatView] Added schema context for:', mention.schema + '.' + mention.name);
+                    console.log('[ChatView] Schema info received:', schemaInfo.substring(0, 500) + '...');
+                } catch (e) {
+                    const errorMsg = e instanceof Error ? e.message : String(e);
+                    console.error('[ChatView] Failed to get schema for mention:', mention.name, e);
+                    
+                    // Notify user about the error
+                    this._view?.webview.postMessage({
+                        type: 'schemaError',
+                        object: `${mention.schema}.${mention.name}`,
+                        error: errorMsg
+                    });
+                    
+                    // Still add a note in context so AI knows there was an issue
+                    schemaContext += `\n### ${mention.type.toUpperCase()}: ${mention.schema}.${mention.name}\n`;
+                    schemaContext += `[Schema could not be retrieved: ${errorMsg}]\n`;
+                }
+            }
+            
+            schemaContext += '\n=== END DATABASE SCHEMA CONTEXT ===\n\n';
+            
+            // Prepend schema context to the message so AI sees it first
+            aiMessage = schemaContext + fullMessage;
+            console.log('[ChatView] AI message with schema context length:', aiMessage.length);
+            console.log('[ChatView] ========== FULL AI MESSAGE ==========');
+            console.log(aiMessage);
+            console.log('[ChatView] ========== END FULL AI MESSAGE ==========');
+        }
+
         // Add user message to history
-        this._messages.push({ role: 'user', content: message });
+        this._messages.push({ role: 'user', content: fullMessage, attachments, mentions });
         this._updateChatHistory();
 
-        // TODO: Integrate with AI provider for actual responses
-        // For now, show a placeholder response
-        const response = `Thanks for your message! AI chat integration is coming soon. You said: "${message}"`;
-        
-        this._messages.push({ role: 'assistant', content: response });
-        this._updateChatHistory();
+        // Show typing indicator
+        this._setTypingIndicator(true);
+
+        try {
+            const config = vscode.workspace.getConfiguration('postgresExplorer');
+            const provider = config.get<string>('aiProvider') || 'vscode-lm';
+            console.log('[ChatView] Using AI provider:', provider);
+
+            this._aiService.setMessages(this._messages);
+            let response: string;
+
+            if (provider === 'vscode-lm') {
+                console.log('[ChatView] Calling VS Code LM API...');
+                response = await this._aiService.callVsCodeLm(aiMessage);
+            } else {
+                console.log('[ChatView] Calling direct API:', provider);
+                response = await this._aiService.callDirectApi(provider, aiMessage, config);
+            }
+            
+            console.log('[ChatView] AI response received, length:', response.length);
+            
+            // Sanitize response - remove any HTML-like patterns that shouldn't be there
+            // This prevents the model from learning bad patterns from previous responses
+            response = this._sanitizeResponse(response);
+
+            this._messages.push({ role: 'assistant', content: response });
+            
+            await this._saveCurrentSession();
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            this._messages.push({ 
+                role: 'assistant', 
+                content: `❌ Error: ${errorMessage}\n\nPlease check your AI provider settings in the extension configuration.` 
+            });
+        } finally {
+            this._setTypingIndicator(false);
+            this._updateChatHistory();
+            this._isProcessing = false;
+        }
     }
 
-    private _updateChatHistory() {
+    // Sanitize AI response to remove any HTML-like artifacts
+    private _sanitizeResponse(response: string): string {
+        // Remove patterns like: sql-keyword">, sql-string">, sql-function">, sql-number">, function">
+        // These are CSS class artifacts that sometimes leak into AI responses
+        let cleaned = response;
+        
+        // Remove CSS class-like patterns followed by ">
+        cleaned = cleaned.replace(/\b(sql-keyword|sql-string|sql-function|sql-number|sql-type|sql-comment|sql-operator|sql-special|function)"\s*>/gi, '');
+        
+        // Remove any remaining HTML-like tags that shouldn't be in markdown
+        cleaned = cleaned.replace(/<span[^>]*>/gi, '');
+        cleaned = cleaned.replace(/<\/span>/gi, '');
+        
+        // Log if we found and cleaned anything
+        if (cleaned !== response) {
+            console.log('[ChatView] Sanitized AI response - removed HTML artifacts');
+        }
+        
+        return cleaned;
+    }
+
+    // ==================== Database Objects ====================
+
+    private async _handleSearchDbObjects(query: string): Promise<void> {
+        try {
+            // First fetch if cache is empty
+            if (this._dbObjectService.getCache().length === 0) {
+                await this._dbObjectService.fetchDbObjects();
+            }
+            
+            const filtered = this._dbObjectService.searchObjects(query);
+            
+            this._view?.webview.postMessage({
+                type: 'dbObjectsResult',
+                objects: filtered
+            });
+        } catch (error) {
+            this._view?.webview.postMessage({
+                type: 'dbObjectsResult',
+                objects: [],
+                error: 'Failed to fetch database objects'
+            });
+        }
+    }
+
+    private async _handleGetDbObjectDetails(object: DbObject): Promise<DbObject> {
+        try {
+            const details = await this._dbObjectService.getObjectSchema(object);
+            const objWithDetails = { ...object, details };
+            this._view?.webview.postMessage({
+                type: 'dbObjectDetails',
+                object: objWithDetails
+            });
+            return objWithDetails;
+        } catch (error) {
+            return object;
+        }
+    }
+
+    private async _handleGetAllDbObjects(): Promise<void> {
+        try {
+            const objects = await this._dbObjectService.fetchDbObjects();
+            this._view?.webview.postMessage({
+                type: 'dbObjectsResult',
+                objects: objects.slice(0, 50)
+            });
+        } catch (error) {
+            this._view?.webview.postMessage({
+                type: 'dbObjectsResult',
+                objects: [],
+                error: 'No database connections available'
+            });
+        }
+    }
+
+    // ==================== File Handling ====================
+
+    private async _handleFilePick() {
+        const fileUri = await vscode.window.showOpenDialog({
+            canSelectMany: false,
+            filters: {
+                'SQL Files': ['sql', 'pgsql'],
+                'Data Files': ['csv', 'json', 'txt'],
+                'All Files': ['*']
+            },
+            title: 'Select a file to attach'
+        });
+
+        if (fileUri && fileUri[0]) {
+            try {
+                const fileContent = await vscode.workspace.fs.readFile(fileUri[0]);
+                const content = new TextDecoder().decode(fileContent);
+                const fileName = fileUri[0].path.split('/').pop() || 'file';
+                
+                const maxSize = 50000;
+                const truncatedContent = content.length > maxSize 
+                    ? content.substring(0, maxSize) + '\n... (truncated)'
+                    : content;
+
+                this._view?.webview.postMessage({
+                    type: 'fileAttached',
+                    file: {
+                        name: fileName,
+                        content: truncatedContent,
+                        type: this._getFileType(fileName)
+                    }
+                });
+            } catch (error) {
+                vscode.window.showErrorMessage('Failed to read file');
+            }
+        }
+    }
+
+    private _getFileType(fileName: string): string {
+        const ext = fileName.split('.').pop()?.toLowerCase() || '';
+        const typeMap: { [key: string]: string } = {
+            'sql': 'sql',
+            'pgsql': 'sql',
+            'json': 'json',
+            'csv': 'csv',
+            'txt': 'text'
+        };
+        return typeMap[ext] || 'text';
+    }
+
+    // ==================== Session Management ====================
+
+    private async _saveCurrentSession(): Promise<void> {
+        const config = vscode.workspace.getConfiguration('postgresExplorer');
+        const provider = config.get<string>('aiProvider') || 'vscode-lm';
+        
+        await this._sessionService.saveSession(
+            this._messages, 
+            (msg) => this._aiService.generateTitle(msg, provider)
+        );
+        this._sendHistoryToWebview();
+    }
+
+    private async _loadSession(sessionId: string): Promise<void> {
+        const messages = this._sessionService.loadSession(sessionId);
+        if (messages) {
+            this._messages = messages;
+            this._updateChatHistory();
+        }
+    }
+
+    private async _deleteSession(sessionId: string): Promise<void> {
+        console.log('[ChatView] _deleteSession called with:', sessionId);
+        const wasCurrentSession = await this._sessionService.deleteSession(sessionId);
+        console.log('[ChatView] Session deleted, wasCurrentSession:', wasCurrentSession);
+        
+        if (wasCurrentSession) {
+            this._messages = [];
+            this._updateChatHistory();
+        }
+        
+        console.log('[ChatView] Sending updated history to webview...');
+        this._sendHistoryToWebview();
+    }
+
+    private _sendHistoryToWebview(): void {
+        if (this._view) {
+            this._view.webview.postMessage({
+                type: 'updateHistory',
+                sessions: this._sessionService.getSessionSummaries()
+            });
+        }
+    }
+
+    // ==================== UI Helpers ====================
+
+    private _updateChatHistory(): void {
         if (this._view) {
             this._view.webview.postMessage({
                 type: 'updateMessages',
@@ -57,310 +404,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         }
     }
 
-    private _getHtmlForWebview(webview: vscode.Webview) {
-        return `<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PostgreSQL Chat</title>
-    <style>
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-        }
-
-        body {
-            font-family: var(--vscode-font-family);
-            font-size: var(--vscode-font-size);
-            color: var(--vscode-foreground);
-            background-color: var(--vscode-sideBar-background);
-            height: 100vh;
-            display: flex;
-            flex-direction: column;
-        }
-
-        .chat-container {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            overflow: hidden;
-            padding: 8px;
-        }
-
-        .chat-header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 8px 0;
-            border-bottom: 1px solid var(--vscode-panel-border);
-            margin-bottom: 8px;
-        }
-
-        .chat-header h3 {
-            font-size: 12px;
-            font-weight: 600;
-            text-transform: uppercase;
-            color: var(--vscode-sideBarSectionHeader-foreground);
-        }
-
-        .clear-btn {
-            background: none;
-            border: none;
-            color: var(--vscode-textLink-foreground);
-            cursor: pointer;
-            font-size: 11px;
-            padding: 2px 6px;
-            border-radius: 3px;
-        }
-
-        .clear-btn:hover {
-            background-color: var(--vscode-toolbar-hoverBackground);
-        }
-
-        .messages-container {
-            flex: 1;
-            overflow-y: auto;
-            padding: 8px 0;
-        }
-
-        .message {
-            margin-bottom: 12px;
-            padding: 8px 12px;
-            border-radius: 8px;
-            max-width: 90%;
-            word-wrap: break-word;
-        }
-
-        .message.user {
-            background-color: var(--vscode-button-background);
-            color: var(--vscode-button-foreground);
-            margin-left: auto;
-            border-bottom-right-radius: 2px;
-        }
-
-        .message.assistant {
-            background-color: var(--vscode-editor-inactiveSelectionBackground);
-            margin-right: auto;
-            border-bottom-left-radius: 2px;
-        }
-
-        .message-role {
-            font-size: 10px;
-            font-weight: 600;
-            text-transform: uppercase;
-            margin-bottom: 4px;
-            opacity: 0.7;
-        }
-
-        .message-content {
-            font-size: 13px;
-            line-height: 1.4;
-        }
-
-        .input-container {
-            display: flex;
-            gap: 6px;
-            padding-top: 8px;
-            border-top: 1px solid var(--vscode-panel-border);
-        }
-
-        .chat-input {
-            flex: 1;
-            padding: 8px 12px;
-            border: 1px solid var(--vscode-input-border);
-            background-color: var(--vscode-input-background);
-            color: var(--vscode-input-foreground);
-            border-radius: 4px;
-            font-size: 13px;
-            outline: none;
-            resize: none;
-            min-height: 36px;
-            max-height: 100px;
-        }
-
-        .chat-input:focus {
-            border-color: var(--vscode-focusBorder);
-        }
-
-        .chat-input::placeholder {
-            color: var(--vscode-input-placeholderForeground);
-        }
-
-        .send-btn {
-            padding: 8px 12px;
-            background-color: var(--vscode-button-background);
-            color: var(--vscode-button-foreground);
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .send-btn:hover {
-            background-color: var(--vscode-button-hoverBackground);
-        }
-
-        .send-btn:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
-
-        .empty-state {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            height: 100%;
-            text-align: center;
-            color: var(--vscode-descriptionForeground);
-            padding: 20px;
-        }
-
-        .empty-state-icon {
-            font-size: 48px;
-            margin-bottom: 16px;
-            opacity: 0.5;
-        }
-
-        .empty-state-text {
-            font-size: 13px;
-            line-height: 1.5;
-        }
-
-        .empty-state-hint {
-            font-size: 11px;
-            margin-top: 8px;
-            opacity: 0.7;
-        }
-    </style>
-</head>
-<body>
-    <div class="chat-container">
-        <div class="chat-header">
-            <h3>💬 SQL Assistant</h3>
-            <button class="clear-btn" onclick="clearChat()">Clear</button>
-        </div>
-        
-        <div class="messages-container" id="messagesContainer">
-            <div class="empty-state" id="emptyState">
-                <div class="empty-state-icon">🐘</div>
-                <div class="empty-state-text">
-                    Ask questions about your PostgreSQL database, get help with queries, or explore your data.
-                </div>
-                <div class="empty-state-hint">
-                    Type a message below to get started
-                </div>
-            </div>
-        </div>
-        
-        <div class="input-container">
-            <textarea 
-                class="chat-input" 
-                id="chatInput" 
-                placeholder="Ask about your database..."
-                rows="1"
-                onkeydown="handleKeyDown(event)"
-            ></textarea>
-            <button class="send-btn" id="sendBtn" onclick="sendMessage()">
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                    <path d="M1.5 1.5L14.5 8L1.5 14.5V9L10.5 8L1.5 7V1.5Z"/>
-                </svg>
-            </button>
-        </div>
-    </div>
-
-    <script>
-        const vscode = acquireVsCodeApi();
-        const messagesContainer = document.getElementById('messagesContainer');
-        const chatInput = document.getElementById('chatInput');
-        const sendBtn = document.getElementById('sendBtn');
-        const emptyState = document.getElementById('emptyState');
-
-        function sendMessage() {
-            const message = chatInput.value.trim();
-            if (!message) return;
-
-            vscode.postMessage({
-                type: 'sendMessage',
-                message: message
-            });
-
-            chatInput.value = '';
-            chatInput.style.height = 'auto';
-        }
-
-        function clearChat() {
-            vscode.postMessage({
-                type: 'clearChat'
+    private _setTypingIndicator(isTyping: boolean): void {
+        if (this._view) {
+            this._view.webview.postMessage({
+                type: 'setTyping',
+                isTyping
             });
         }
-
-        function handleKeyDown(event) {
-            if (event.key === 'Enter' && !event.shiftKey) {
-                event.preventDefault();
-                sendMessage();
-            }
-        }
-
-        // Auto-resize textarea
-        chatInput.addEventListener('input', function() {
-            this.style.height = 'auto';
-            this.style.height = Math.min(this.scrollHeight, 100) + 'px';
-        });
-
-        // Handle messages from extension
-        window.addEventListener('message', event => {
-            const message = event.data;
-            
-            switch (message.type) {
-                case 'updateMessages':
-                    renderMessages(message.messages);
-                    break;
-            }
-        });
-
-        function renderMessages(messages) {
-            if (messages.length === 0) {
-                emptyState.style.display = 'flex';
-                // Remove only message elements, keep empty state
-                const messageElements = messagesContainer.querySelectorAll('.message');
-                messageElements.forEach(el => el.remove());
-                return;
-            }
-
-            emptyState.style.display = 'none';
-            
-            // Clear existing messages
-            const messageElements = messagesContainer.querySelectorAll('.message');
-            messageElements.forEach(el => el.remove());
-
-            // Render new messages
-            messages.forEach(msg => {
-                const messageDiv = document.createElement('div');
-                messageDiv.className = 'message ' + msg.role;
-                
-                const roleDiv = document.createElement('div');
-                roleDiv.className = 'message-role';
-                roleDiv.textContent = msg.role === 'user' ? 'You' : 'Assistant';
-                
-                const contentDiv = document.createElement('div');
-                contentDiv.className = 'message-content';
-                contentDiv.textContent = msg.content;
-                
-                messageDiv.appendChild(roleDiv);
-                messageDiv.appendChild(contentDiv);
-                messagesContainer.appendChild(messageDiv);
-            });
-
-            // Scroll to bottom
-            messagesContainer.scrollTop = messagesContainer.scrollHeight;
-        }
-    </script>
-</body>
-</html>`;
     }
 }

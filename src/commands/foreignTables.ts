@@ -2,6 +2,13 @@ import * as vscode from 'vscode';
 import { createAndShowNotebook, createMetadata, getConnectionWithPassword, validateItem } from '../commands/connection';
 import { DatabaseTreeItem, DatabaseTreeProvider } from '../providers/DatabaseTreeProvider';
 import { ConnectionManager } from '../services/ConnectionManager';
+import { 
+    MarkdownUtils, 
+    FormatHelpers, 
+    ErrorHandlers, 
+    SQL_TEMPLATES, 
+    ObjectUtils
+} from './helper';
 
 /**
  * SQL Queries for foreign table operations
@@ -85,24 +92,20 @@ export async function cmdForeignTableOperations(item: DatabaseTreeItem, context:
             const createTableStatement = `CREATE FOREIGN TABLE ${item.schema}.${item.label} (\n${columnDefinitions}\n) SERVER ${serverName}${options.length > 0 ? '\nOPTIONS (' + options.map((opt: any) => `${opt}`).join(', ') + ')' : ''};`;
             const metadata = createMetadata(connection, item.databaseName);
 
+            const markdown = MarkdownUtils.header(`🔗 Foreign Table Operations: \`${item.schema}.${item.label}\``) +
+                MarkdownUtils.infoBox('This notebook contains operations for managing the PostgreSQL foreign table. Run the cells below to execute the operations.') +
+                `\n\n#### 🎯 Available Operations\n\n` +
+                MarkdownUtils.operationsTable([
+                    { operation: '<strong>View Definition</strong>', description: 'Show the CREATE FOREIGN TABLE statement' },
+                    { operation: '<strong>Query Data</strong>', description: 'Select the first 100 rows' },
+                    { operation: '<strong>Edit Table</strong>', description: 'Template for modifying the table (requires recreation)' },
+                    { operation: '<strong>Drop Table</strong>', description: 'Delete the table (Warning: Irreversible)' }
+                ]);
+
             const cells = [
                 new vscode.NotebookCellData(
                     vscode.NotebookCellKind.Markup,
-                    `### Foreign Table Operations: \`${item.schema}.${item.label}\`
-
-<div style="font-size: 12px; background-color: #2b3a42; border-left: 3px solid #3498db; padding: 6px 10px; margin-bottom: 15px; border-radius: 3px;">
-    <strong>ℹ️ Note:</strong> This notebook contains operations for managing the PostgreSQL foreign table. Run the cells below to execute the operations.
-</div>
-
-#### 🎯 Available Operations
-
-<table style="font-size: 11px; width: 100%; border-collapse: collapse;">
-    <tr><th style="text-align: left;">Operation</th><th style="text-align: left;">Description</th></tr>
-    <tr><td><strong>View Definition</strong></td><td>Show the CREATE FOREIGN TABLE statement</td></tr>
-    <tr><td><strong>Query Data</strong></td><td>Select the first 100 rows</td></tr>
-    <tr><td><strong>Edit Table</strong></td><td>Template for modifying the table (requires recreation)</td></tr>
-    <tr><td><strong>Drop Table</strong></td><td>Delete the table (Warning: Irreversible)</td></tr>
-</table>`,
+                    markdown,
                     'markdown'
                 ),
                 new vscode.NotebookCellData(
@@ -149,6 +152,11 @@ OPTIONS (
                     'sql'
                 ),
                 new vscode.NotebookCellData(
+                    vscode.NotebookCellKind.Markup,
+                    `##### ❌ Drop Foreign Table`,
+                    'markdown'
+                ),
+                new vscode.NotebookCellData(
                     vscode.NotebookCellKind.Code,
                     `-- Drop table
 DROP FOREIGN TABLE IF EXISTS ${item.schema}.${item.label};`,
@@ -161,7 +169,7 @@ DROP FOREIGN TABLE IF EXISTS ${item.schema}.${item.label};`,
             // Do not close shared client
         }
     } catch (err: any) {
-        vscode.window.showErrorMessage(`Failed to create foreign table operations notebook: ${err.message}`);
+        await ErrorHandlers.handleCommandError(err, 'create foreign table operations notebook');
     }
 }
 
@@ -196,11 +204,8 @@ export async function cmdEditForeignTable(item: DatabaseTreeItem, context: vscod
             const cells = [
                 new vscode.NotebookCellData(
                     vscode.NotebookCellKind.Markup,
-                    `### Edit Foreign Table: \`${item.schema}.${item.label}\`
-
-<div style="font-size: 12px; background-color: #2b3a42; border-left: 3px solid #3498db; padding: 6px 10px; margin-bottom: 15px; border-radius: 3px;">
-    <strong>ℹ️ Note:</strong> Modify the foreign table definition below and execute the cells to update it.
-</div>`,
+                    MarkdownUtils.header(`✏️ Edit Foreign Table: \`${item.schema}.${item.label}\``) +
+                    MarkdownUtils.infoBox('Modify the foreign table definition below and execute the cells to update it.'),
                     'markdown'
                 ),
                 new vscode.NotebookCellData(
@@ -224,7 +229,7 @@ ${createStatement}`,
             // Do not close shared client
         }
     } catch (err: any) {
-        vscode.window.showErrorMessage(`Failed to create foreign table edit notebook: ${err.message}`);
+        await ErrorHandlers.handleCommandError(err, 'create foreign table edit notebook');
     }
 }
 
@@ -244,39 +249,197 @@ export async function cmdCreateForeignTable(item: DatabaseTreeItem, context: vsc
         const connection = await getConnectionWithPassword(item.connectionId!);
         const metadata = createMetadata(connection, item.databaseName);
 
-        const cells = [
-            new vscode.NotebookCellData(
-                vscode.NotebookCellKind.Markup,
-                `### Create New Foreign Table in Schema: \`${item.schema}\`
+        const schemaName = item.schema || 'public';
 
-<div style="font-size: 12px; background-color: #2b3a42; border-left: 3px solid #3498db; padding: 6px 10px; margin-bottom: 15px; border-radius: 3px;">
-    <strong>ℹ️ Note:</strong> Modify the foreign table definition below and execute the cell to create the foreign table.
-</div>`,
-                'markdown'
-            ),
+        const markdown = MarkdownUtils.header(`➕ Create New Foreign Table in Schema: \`${schemaName}\``) +
+            MarkdownUtils.infoBox('This notebook provides templates for creating foreign tables. Modify the templates below and execute to create foreign tables.') +
+            `\n\n#### 📋 Foreign Table Design Guidelines\n\n` +
+            MarkdownUtils.operationsTable([
+                { operation: '<strong>Server Setup</strong>', description: 'Foreign tables require a foreign server. Create one using CREATE SERVER before creating the table.' },
+                { operation: '<strong>Column Mapping</strong>', description: 'Map local columns to remote columns. Data types should be compatible.' },
+                { operation: '<strong>Options</strong>', description: 'Use OPTIONS to specify remote schema, table name, and other connection parameters.' },
+                { operation: '<strong>Permissions</strong>', description: 'Ensure user has USAGE privilege on the foreign server and appropriate permissions on the remote database.' },
+                { operation: '<strong>Performance</strong>', description: 'Foreign tables can be slower than local tables. Consider materialized views for frequently accessed data.' }
+            ]) +
+            `\n\n#### 🏷️ Common Foreign Table Patterns\n\n` +
+            MarkdownUtils.propertiesTable({
+                'Remote PostgreSQL': 'Connect to another PostgreSQL database',
+                'Remote MySQL': 'Connect to MySQL/MariaDB database',
+                'Remote SQL Server': 'Connect to Microsoft SQL Server',
+                'File-based': 'Access CSV or other file-based data sources',
+                'Custom FDW': 'Use custom Foreign Data Wrapper extensions'
+            }) +
+            MarkdownUtils.successBox('Foreign tables provide transparent access to remote data sources. They are read-only by default but can support writes with appropriate FDW support.') +
+            `\n\n---`;
+
+        const cells = [
+            new vscode.NotebookCellData(vscode.NotebookCellKind.Markup, markdown, 'markdown'),
             new vscode.NotebookCellData(
                 vscode.NotebookCellKind.Markup,
-                `##### 📝 Foreign Table Definition`,
+                `##### 📝 Basic Foreign Table (Recommended Start)`,
                 'markdown'
             ),
             new vscode.NotebookCellData(
                 vscode.NotebookCellKind.Code,
-                `-- Create new foreign table
-CREATE FOREIGN TABLE ${item.schema}.foreign_table_name (
-    column1 integer,
-    column2 text
+                `-- Create foreign server first (if not exists)
+CREATE SERVER foreign_server_name
+FOREIGN DATA WRAPPER postgres_fdw
+OPTIONS (
+    host 'remote_host',
+    port '5432',
+    dbname 'remote_database'
+);
+
+-- Create user mapping
+CREATE USER MAPPING FOR CURRENT_USER
+SERVER foreign_server_name
+OPTIONS (
+    user 'remote_user',
+    password 'remote_password'
+);
+
+-- Create foreign table
+CREATE FOREIGN TABLE ${schemaName}.foreign_table_name (
+    id integer,
+    name text,
+    created_at timestamp
 )
 SERVER foreign_server_name
-OPTIONS (schema_name 'remote_schema', table_name 'remote_table');
+OPTIONS (
+    schema_name 'remote_schema',
+    table_name 'remote_table'
+);
 
 -- Add comment
-COMMENT ON FOREIGN TABLE ${item.schema}.foreign_table_name IS 'Foreign table description';`,
+COMMENT ON FOREIGN TABLE ${schemaName}.foreign_table_name IS 'Foreign table description';`,
                 'sql'
+            ),
+            new vscode.NotebookCellData(
+                vscode.NotebookCellKind.Markup,
+                `##### 🔗 PostgreSQL-to-PostgreSQL`,
+                'markdown'
+            ),
+            new vscode.NotebookCellData(
+                vscode.NotebookCellKind.Code,
+                `-- Enable postgres_fdw extension
+CREATE EXTENSION IF NOT EXISTS postgres_fdw;
+
+-- Create foreign server
+CREATE SERVER remote_postgres_server
+FOREIGN DATA WRAPPER postgres_fdw
+OPTIONS (
+    host '192.168.1.100',
+    port '5432',
+    dbname 'remote_db'
+);
+
+-- Create user mapping
+CREATE USER MAPPING FOR CURRENT_USER
+SERVER remote_postgres_server
+OPTIONS (
+    user 'remote_user',
+    password 'remote_password'
+);
+
+-- Create foreign table
+CREATE FOREIGN TABLE ${schemaName}.remote_table (
+    id serial,
+    name varchar(100),
+    email varchar(255),
+    created_at timestamptz DEFAULT now()
+)
+SERVER remote_postgres_server
+OPTIONS (
+    schema_name 'public',
+    table_name 'users'
+);`,
+                'sql'
+            ),
+            new vscode.NotebookCellData(
+                vscode.NotebookCellKind.Markup,
+                `##### 📊 File-based Foreign Table (file_fdw)`,
+                'markdown'
+            ),
+            new vscode.NotebookCellData(
+                vscode.NotebookCellKind.Code,
+                `-- Enable file_fdw extension
+CREATE EXTENSION IF NOT EXISTS file_fdw;
+
+-- Create foreign server
+CREATE SERVER file_server
+FOREIGN DATA WRAPPER file_fdw;
+
+-- Create foreign table for CSV file
+CREATE FOREIGN TABLE ${schemaName}.csv_data (
+    id integer,
+    name text,
+    value numeric,
+    date date
+)
+SERVER file_server
+OPTIONS (
+    filename '/path/to/data.csv',
+    format 'csv',
+    header 'true'
+);`,
+                'sql'
+            ),
+            new vscode.NotebookCellData(
+                vscode.NotebookCellKind.Markup,
+                `##### 🔍 Query Foreign Table`,
+                'markdown'
+            ),
+            new vscode.NotebookCellData(
+                vscode.NotebookCellKind.Code,
+                `-- Query foreign table (works like regular table)
+SELECT * FROM ${schemaName}.foreign_table_name
+WHERE condition
+LIMIT 100;
+
+-- Join with local tables
+SELECT 
+    lt.local_column,
+    ft.remote_column
+FROM local_table lt
+JOIN ${schemaName}.foreign_table_name ft ON lt.id = ft.id;`,
+                'sql'
+            ),
+            new vscode.NotebookCellData(
+                vscode.NotebookCellKind.Markup,
+                `##### 🛠️ Manage Foreign Server`,
+                'markdown'
+            ),
+            new vscode.NotebookCellData(
+                vscode.NotebookCellKind.Code,
+                `-- List foreign servers
+SELECT 
+    srvname as server_name,
+    srvoptions as options
+FROM pg_foreign_server;
+
+-- List user mappings
+SELECT 
+    um.srvname as server_name,
+    um.usename as user_name,
+    um.umoptions as options
+FROM pg_user_mappings um;
+
+-- Drop user mapping
+-- DROP USER MAPPING FOR CURRENT_USER SERVER foreign_server_name;
+
+-- Drop foreign server
+-- DROP SERVER foreign_server_name CASCADE;`,
+                'sql'
+            ),
+            new vscode.NotebookCellData(
+                vscode.NotebookCellKind.Markup,
+                MarkdownUtils.warningBox('Foreign tables require proper network connectivity and authentication. Ensure firewall rules allow connections and credentials are correct. Performance may vary based on network latency.'),
+                'markdown'
             )
         ];
 
         await createAndShowNotebook(cells, metadata);
     } catch (err: any) {
-        vscode.window.showErrorMessage(`Failed to create foreign table notebook: ${err.message}`);
+        await ErrorHandlers.handleCommandError(err, 'create foreign table notebook');
     }
 }

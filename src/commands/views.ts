@@ -3,6 +3,14 @@ import { createAndShowNotebook, createMetadata, getConnectionWithPassword, valid
 import { DatabaseTreeItem, DatabaseTreeProvider } from '../providers/DatabaseTreeProvider';
 import { ConnectionManager } from '../services/ConnectionManager';
 import { TablePropertiesPanel } from '../tableProperties';
+import { 
+    MarkdownUtils, 
+    FormatHelpers, 
+    ErrorHandlers, 
+    SQL_TEMPLATES, 
+    ObjectUtils,
+    createSimpleNotebook 
+} from './helper';
 
 /**
  * SQL query to get the view definition from PostgreSQL.
@@ -24,45 +32,13 @@ WHERE table_schema = $1
 AND table_name = $2
 ORDER BY ordinal_position`;
 
-/**
- * createSimpleNotebook - Helper function to create a simple notebook with markdown and SQL cells
- */
-async function createSimpleNotebook(item: DatabaseTreeItem, title: string, sql: string, markdownContent?: string) {
-    try {
-        validateItem(item);
-        const connection = await getConnectionWithPassword(item.connectionId!);
-        const metadata = createMetadata(connection, item.databaseName);
-
-        const defaultMarkdown = `# ${title}: \`${item.schema}.${item.label}\`\n\nExecute the cell below to run the query.`;
-
-        const cells = [
-            new vscode.NotebookCellData(
-                vscode.NotebookCellKind.Markup,
-                markdownContent || defaultMarkdown,
-                'markdown'
-            ),
-            new vscode.NotebookCellData(
-                vscode.NotebookCellKind.Code,
-                sql,
-                'sql'
-            )
-        ];
-
-        await createAndShowNotebook(cells, metadata);
-    } catch (err: any) {
-        vscode.window.showErrorMessage(`Failed to create ${title} notebook: ${err.message}`);
-    }
-}
 
 /**
  * cmdScriptSelect - Command to generate a SELECT script for a view
  */
 export async function cmdScriptSelect(item: DatabaseTreeItem, context: vscode.ExtensionContext) {
-    const markdown = `### 📖 SELECT Script: \`${item.schema}.${item.label}\`
-
-<div style="font-size: 12px; background-color: #2b3a42; border-left: 3px solid #3498db; padding: 6px 10px; margin-bottom: 15px; border-radius: 3px;">
-    <strong>ℹ️ Note:</strong> Execute the query below to retrieve data from the view.
-</div>`;
+    const markdown = MarkdownUtils.header(`📖 SELECT Script: \`${item.schema}.${item.label}\``) +
+        MarkdownUtils.infoBox('Execute the query below to retrieve data from the view.');
     await createSimpleNotebook(item, 'SELECT Script', `SELECT * FROM ${item.schema}.${item.label} LIMIT 100;`, markdown);
 }
 
@@ -104,11 +80,8 @@ export async function cmdEditView(item: DatabaseTreeItem, context: vscode.Extens
             const cells = [
                 new vscode.NotebookCellData(
                     vscode.NotebookCellKind.Markup,
-                    `### Edit View: \`${item.schema}.${item.label}\`
-
-<div style="font-size: 12px; background-color: #2b3a42; border-left: 3px solid #3498db; padding: 6px 10px; margin-bottom: 15px; border-radius: 3px;">
-    <strong>ℹ️ Note:</strong> Modify the view definition below and execute the cell to update the view.
-</div>`,
+                    MarkdownUtils.header(`✏️ Edit View: \`${item.schema}.${item.label}\``) +
+                    MarkdownUtils.infoBox('Modify the view definition below and execute the cell to update the view.'),
                     'markdown'
                 ),
                 new vscode.NotebookCellData(
@@ -128,7 +101,7 @@ export async function cmdEditView(item: DatabaseTreeItem, context: vscode.Extens
             // Do not close shared client
         }
     } catch (err: any) {
-        vscode.window.showErrorMessage(`Failed to create view edit notebook: ${err.message} `);
+        await ErrorHandlers.handleCommandError(err, 'create view edit notebook');
     }
 }
 
@@ -147,11 +120,8 @@ export async function cmdViewData(item: DatabaseTreeItem, context: vscode.Extens
         const cells = [
             new vscode.NotebookCellData(
                 vscode.NotebookCellKind.Markup,
-                `### View Data: \`${item.schema}.${item.label}\`
-
-<div style="font-size: 12px; background-color: #2b3a42; border-left: 3px solid #3498db; padding: 6px 10px; margin-bottom: 15px; border-radius: 3px;">
-    <strong>ℹ️ Note:</strong> Modify the query below to filter or transform the data as needed.
-</div>`,
+                MarkdownUtils.header(`📖 View Data: \`${item.schema}.${item.label}\``) +
+                MarkdownUtils.infoBox('Modify the query below to filter or transform the data as needed.'),
                 'markdown'
             ),
             new vscode.NotebookCellData(
@@ -171,7 +141,7 @@ LIMIT 100; `,
 
         await createAndShowNotebook(cells, metadata);
     } catch (err: any) {
-        vscode.window.showErrorMessage(`Failed to create view data notebook: ${err.message} `);
+        await ErrorHandlers.handleCommandError(err, 'create view data notebook');
     }
 }
 
@@ -190,11 +160,8 @@ export async function cmdDropView(item: DatabaseTreeItem, context: vscode.Extens
         const cells = [
             new vscode.NotebookCellData(
                 vscode.NotebookCellKind.Markup,
-                `### Drop View: \`${item.schema}.${item.label}\`
-
-<div style="font-size: 12px; background-color: #3e2d2d; border-left: 3px solid #e74c3c; padding: 6px 10px; margin-bottom: 15px; border-radius: 3px;">
-    <strong>🛑 Caution:</strong> This action will permanently delete the view. This operation cannot be undone.
-</div>`,
+                MarkdownUtils.header(`❌ Drop View: \`${item.schema}.${item.label}\``) +
+                MarkdownUtils.dangerBox('This action will permanently delete the view. This operation cannot be undone.'),
                 'markdown'
             ),
             new vscode.NotebookCellData(
@@ -204,15 +171,14 @@ export async function cmdDropView(item: DatabaseTreeItem, context: vscode.Extens
             ),
             new vscode.NotebookCellData(
                 vscode.NotebookCellKind.Code,
-                `-- Drop view
-DROP VIEW IF EXISTS ${item.schema}.${item.label}; `,
+                SQL_TEMPLATES.DROP.VIEW(item.schema!, item.label),
                 'sql'
             )
         ];
 
         await createAndShowNotebook(cells, metadata);
     } catch (err: any) {
-        vscode.window.showErrorMessage(`Failed to create drop view notebook: ${err.message} `);
+        await ErrorHandlers.handleCommandError(err, 'create drop view notebook');
     }
 }
 
@@ -251,33 +217,24 @@ export async function cmdViewOperations(item: DatabaseTreeItem, context: vscode.
             const cells = [
                 new vscode.NotebookCellData(
                     vscode.NotebookCellKind.Markup,
-                    `### View Operations: \`${item.schema}.${item.label}\`
-
-<div style="font-size: 12px; background-color: #2b3a42; border-left: 3px solid #3498db; padding: 6px 10px; margin-bottom: 15px; border-radius: 3px;">
-    <strong>ℹ️ Note:</strong> This notebook contains common operations for the PostgreSQL view. Run the cells below to execute the operations.
-</div>
-
-#### 📋 View Information
-
-<table style="font-size: 11px; width: 100%; border-collapse: collapse;">
-    <tr><th style="text-align: left;">Property</th><th style="text-align: left;">Value</th></tr>
-    <tr><td><strong>Schema</strong></td><td>${item.schema}</td></tr>
-    <tr><td><strong>View Name</strong></td><td>${item.label}</td></tr>
-    <tr><td><strong>Column Count</strong></td><td>${columns.length}</td></tr>
-</table>
-
-#### 🎯 Available Operations
-
-<table style="font-size: 11px; width: 100%; border-collapse: collapse;">
-    <tr><th style="text-align: left;">Operation</th><th style="text-align: left;">Description</th></tr>
-    <tr><td><strong>View Columns</strong></td><td>Display column definitions</td></tr>
-    <tr><td><strong>View Definition</strong></td><td>Show the CREATE VIEW statement</td></tr>
-    <tr><td><strong>Query Data</strong></td><td>Select the first 100 rows</td></tr>
-    <tr><td><strong>Query with Filters</strong></td><td>Advanced SELECT with WHERE clause</td></tr>
-    <tr><td><strong>Query with Aggregation</strong></td><td>Group and aggregate data</td></tr>
-    <tr><td><strong>Modify Definition</strong></td><td>Template for updating the view</td></tr>
-    <tr><td><strong>Drop</strong></td><td>Delete the view (Warning: Irreversible)</td></tr>
-</table>`,
+                    MarkdownUtils.header(`👁️ View Operations: \`${item.schema}.${item.label}\``) +
+                    MarkdownUtils.infoBox('This notebook contains common operations for the PostgreSQL view. Run the cells below to execute the operations.') +
+                    `\n\n#### 📋 View Information\n\n` +
+                    MarkdownUtils.propertiesTable({
+                        'Schema': item.schema || '',
+                        'View Name': item.label,
+                        'Column Count': `${columns.length}`
+                    }) +
+                    `\n\n#### 🎯 Available Operations\n\n` +
+                    MarkdownUtils.operationsTable([
+                        { operation: '📋 View Columns', description: 'Display column definitions' },
+                        { operation: '📝 View Definition', description: 'Show the CREATE VIEW statement' },
+                        { operation: '📖 Query Data', description: 'Select the first 100 rows' },
+                        { operation: '🔍 Query with Filters', description: 'Advanced SELECT with WHERE clause' },
+                        { operation: '📊 Query with Aggregation', description: 'Group and aggregate data' },
+                        { operation: '✏️ Modify Definition', description: 'Template for updating the view' },
+                        { operation: '❌ Drop', description: 'Delete the view (Warning: Irreversible)' }
+                    ]),
                     'markdown'
                 ),
                 new vscode.NotebookCellData(
@@ -365,8 +322,7 @@ WHERE condition;`,
                 ),
                 new vscode.NotebookCellData(
                     vscode.NotebookCellKind.Code,
-                    `-- Drop view
-DROP VIEW IF EXISTS ${item.schema}.${item.label};`,
+                    SQL_TEMPLATES.DROP.VIEW(item.schema!, item.label),
                     'sql'
                 )
             ];
@@ -376,7 +332,7 @@ DROP VIEW IF EXISTS ${item.schema}.${item.label};`,
             // Do not close shared client
         }
     } catch (err: any) {
-        vscode.window.showErrorMessage(`Failed to create view operations notebook: ${err.message} `);
+        await ErrorHandlers.handleCommandError(err, 'create view operations notebook');
     }
 }
 
@@ -482,16 +438,6 @@ export async function cmdShowViewProperties(item: DatabaseTreeItem, context: vsc
 
             const metadata = createMetadata(connection, item.databaseName);
 
-            const getKindLabel = (kind: string) => {
-                switch (kind) {
-                    case 'r': return '📊 Table';
-                    case 'v': return '👁️ View';
-                    case 'm': return '💾 Materialized View';
-                    case 'f': return '🌐 Foreign Table';
-                    default: return kind;
-                }
-            };
-
             // Build column table HTML
             const columnRows = columns.map(col => {
                 const dataType = col.character_maximum_length 
@@ -503,8 +449,8 @@ export async function cmdShowViewProperties(item: DatabaseTreeItem, context: vsc
         <td>${col.ordinal_position}</td>
         <td><strong>${col.column_name}</strong></td>
         <td><code>${dataType}</code></td>
-        <td>${col.is_nullable === 'YES' ? '✅' : '🚫'}</td>
-        <td>${col.default_value ? `<code>${col.default_value}</code>` : '—'}</td>
+        <td>${FormatHelpers.formatBoolean(col.is_nullable === 'YES')}</td>
+        <td>${col.column_default ? `<code>${col.column_default}</code>` : '—'}</td>
         <td>${col.description || '—'}</td>
     </tr>`;
             }).join('\n');
@@ -512,7 +458,7 @@ export async function cmdShowViewProperties(item: DatabaseTreeItem, context: vsc
             // Build dependencies table HTML
             const dependencyRows = dependents.map(dep => {
                 return `    <tr>
-        <td>${getKindLabel(dep.kind)}</td>
+        <td>${ObjectUtils.getKindLabel(dep.kind)}</td>
         <td><code>${dep.schema}.${dep.name}</code></td>
     </tr>`;
             }).join('\n');
@@ -520,7 +466,7 @@ export async function cmdShowViewProperties(item: DatabaseTreeItem, context: vsc
             // Build references table HTML
             const referenceRows = references.map(ref => {
                 return `    <tr>
-        <td>${getKindLabel(ref.kind)}</td>
+        <td>${ObjectUtils.getKindLabel(ref.kind)}</td>
         <td><code>${ref.schema}.${ref.name}</code></td>
     </tr>`;
             }).join('\n');
@@ -534,27 +480,20 @@ ${viewDefinition};
 -- View comment
 ${view.comment ? `COMMENT ON VIEW ${item.schema}.${item.label} IS '${view.comment.replace(/'/g, "''")}';` : `-- COMMENT ON VIEW ${item.schema}.${item.label} IS 'view description';`}`;
 
-            const markdown = `### 👁️ View Properties: \`${item.schema}.${item.label}\`
-
-<div style="font-size: 12px; background-color: #2b3a42; border-left: 3px solid #3498db; padding: 6px 10px; margin-bottom: 15px; border-radius: 3px;">
-    <strong>ℹ️ Owner:</strong> ${view.owner} ${view.comment ? `| <strong>Comment:</strong> ${view.comment}` : ''}
-</div>
-
-#### 📊 General Information
-
-<table style="font-size: 11px; width: 100%; border-collapse: collapse;">
-    <tr><th style="text-align: left; width: 30%;">Property</th><th style="text-align: left;">Value</th></tr>
-    <tr><td><strong>Schema</strong></td><td>${view.schema_name}</td></tr>
-    <tr><td><strong>View Name</strong></td><td>${view.view_name}</td></tr>
-    <tr><td><strong>Owner</strong></td><td>${view.owner}</td></tr>
-    <tr><td><strong>Size</strong></td><td>${sizes.view_size}</td></tr>
-    <tr><td><strong>Row Estimate</strong></td><td>${view.row_estimate?.toLocaleString() || 'N/A'}</td></tr>
-    <tr><td><strong>Column Count</strong></td><td>${columns.length}</td></tr>
-</table>
-
-#### 📋 Columns (${columns.length})
-
-<table style="font-size: 11px; width: 100%; border-collapse: collapse;">
+            const ownerInfo = view.owner + (view.comment ? ` | <strong>Comment:</strong> ${view.comment}` : '');
+            const markdown = MarkdownUtils.header(`👁️ View Properties: \`${item.schema}.${item.label}\``) +
+                MarkdownUtils.infoBox(`<strong>Owner:</strong> ${ownerInfo}`) +
+                `\n\n#### 📊 General Information\n\n` +
+                MarkdownUtils.propertiesTable({
+                    'Schema': view.schema_name,
+                    'View Name': view.view_name,
+                    'Owner': view.owner,
+                    'Size': sizes.view_size,
+                    'Row Estimate': view.row_estimate?.toLocaleString() || 'N/A',
+                    'Column Count': `${columns.length}`
+                }) +
+                `\n\n#### 📋 Columns (${columns.length})\n\n` +
+                `<table style="font-size: 11px; width: 100%; border-collapse: collapse;">
     <tr>
         <th style="text-align: left; width: 5%;">#</th>
         <th style="text-align: left; width: 20%;">Name</th>
@@ -566,11 +505,10 @@ ${view.comment ? `COMMENT ON VIEW ${item.schema}.${item.label} IS '${view.commen
 ${columnRows}
 </table>
 
-${references.length > 0 ? `#### 🔗 Referenced Objects (${references.length})
+` +
+                (references.length > 0 ? `#### 🔗 Referenced Objects (${references.length})
 
-<div style="font-size: 11px; background-color: #2d3a42; border-left: 3px solid #9b59b6; padding: 6px 10px; margin-bottom: 10px; border-radius: 3px;">
-    Objects that this view depends on (base tables and views):
-</div>
+${MarkdownUtils.infoBox('Objects that this view depends on (base tables and views):', 'Info')}
 
 <table style="font-size: 11px; width: 100%; border-collapse: collapse;">
     <tr>
@@ -580,11 +518,10 @@ ${references.length > 0 ? `#### 🔗 Referenced Objects (${references.length})
 ${referenceRows}
 </table>
 
-` : ''}${dependents.length > 0 ? `#### 🔄 Dependent Objects (${dependents.length})
+` : '') +
+                (dependents.length > 0 ? `#### 🔄 Dependent Objects (${dependents.length})
 
-<div style="font-size: 11px; background-color: #3a2d42; border-left: 3px solid #e67e22; padding: 6px 10px; margin-bottom: 10px; border-radius: 3px;">
-    Objects that depend on this view (other views that reference this one):
-</div>
+${MarkdownUtils.infoBox('Objects that depend on this view (other views that reference this one):', 'Info')}
 
 <table style="font-size: 11px; width: 100%; border-collapse: collapse;">
     <tr>
@@ -594,7 +531,8 @@ ${referenceRows}
 ${dependencyRows}
 </table>
 
-` : ''}---`;
+` : '') +
+                '---';
 
             const cells = [
                 new vscode.NotebookCellData(vscode.NotebookCellKind.Markup, markdown, 'markdown'),
@@ -615,8 +553,10 @@ ${dependencyRows}
                 ),
                 new vscode.NotebookCellData(
                     vscode.NotebookCellKind.Code,
-                    `-- Drop view (with dependencies)
-DROP VIEW IF EXISTS ${item.schema}.${item.label} CASCADE;
+                    `${SQL_TEMPLATES.DROP.VIEW(item.schema!, item.label)}
+
+-- Drop view (with dependencies)
+-- DROP VIEW IF EXISTS ${item.schema}.${item.label} CASCADE;
 
 -- Drop view (without dependencies - will fail if referenced)
 -- DROP VIEW IF EXISTS ${item.schema}.${item.label} RESTRICT;`,
@@ -668,7 +608,7 @@ ORDER BY v.table_schema, v.table_name, v.column_name;`,
             // Do not close shared client
         }
     } catch (err: any) {
-        vscode.window.showErrorMessage(`Failed to show view properties: ${err.message}`);
+        await ErrorHandlers.handleCommandError(err, 'show view properties');
     }
 }
 
@@ -688,41 +628,191 @@ export async function cmdCreateView(item: DatabaseTreeItem, context: vscode.Exte
         const connection = await getConnectionWithPassword(item.connectionId!);
         const metadata = createMetadata(connection, item.databaseName);
 
-        const cells = [
-            new vscode.NotebookCellData(
-                vscode.NotebookCellKind.Markup,
-                `### Create New View in Schema: \`${item.schema}\`
+        const schema = item.schema!;
 
-<div style="font-size: 12px; background-color: #2b3a42; border-left: 3px solid #3498db; padding: 6px 10px; margin-bottom: 15px; border-radius: 3px;">
-    <strong>ℹ️ Note:</strong> Modify the view definition below and execute the cell to create the view.
-</div>`,
-                'markdown'
-            ),
+        const markdown = MarkdownUtils.header(`➕ Create New View in Schema: \`${schema}\``) +
+            MarkdownUtils.infoBox('This notebook provides templates for creating views. Modify the templates below and execute to create views.') +
+            `\n\n#### 📋 View Design Guidelines\n\n` +
+            MarkdownUtils.operationsTable([
+                { operation: '<strong>Naming</strong>', description: 'Use snake_case for view names (e.g., user_summary, order_details)' },
+                { operation: '<strong>Purpose</strong>', description: 'Views simplify complex queries, provide abstraction, or enforce security' },
+                { operation: '<strong>Performance</strong>', description: 'Views don\'t store data; queries execute against underlying tables' },
+                { operation: '<strong>Materialized Views</strong>', description: 'For better performance, consider materialized views for expensive queries' },
+                { operation: '<strong>Security</strong>', description: 'Use views to restrict column/row access without modifying base tables' }
+            ]) +
+            `\n\n#### 🏷️ Common View Patterns\n\n` +
+            MarkdownUtils.propertiesTable({
+                'Simple View': 'SELECT columns FROM single table',
+                'Joined View': 'JOIN multiple tables for simplified access',
+                'Aggregated View': 'GROUP BY with aggregate functions',
+                'Filtered View': 'WHERE clause to show subset of data',
+                'Computed View': 'Calculated columns and expressions',
+                'Security View': 'Row-level security with WHERE conditions'
+            }) +
+            MarkdownUtils.successBox('Views are updated automatically when underlying tables change. Use CREATE OR REPLACE to modify existing views.') +
+            `\n\n---`;
+
+        const cells = [
+            new vscode.NotebookCellData(vscode.NotebookCellKind.Markup, markdown, 'markdown'),
             new vscode.NotebookCellData(
                 vscode.NotebookCellKind.Markup,
-                `##### 📝 View Definition`,
+                `##### 📝 Basic View (Recommended Start)`,
                 'markdown'
             ),
             new vscode.NotebookCellData(
                 vscode.NotebookCellKind.Code,
-                `-- Create new view
-CREATE OR REPLACE VIEW ${item.schema}.view_name AS
+                `-- Create basic view
+CREATE OR REPLACE VIEW ${schema}.view_name AS
 SELECT 
     column1, 
-    column2
+    column2,
+    column3
 FROM 
-    source_table
+    ${schema}.table_name
 WHERE 
     condition;
 
 -- Add comment
-COMMENT ON VIEW ${item.schema}.view_name IS 'View description';`,
+COMMENT ON VIEW ${schema}.view_name IS 'Description of what this view provides';`,
                 'sql'
+            ),
+            new vscode.NotebookCellData(
+                vscode.NotebookCellKind.Markup,
+                `##### 🔗 Joined View`,
+                'markdown'
+            ),
+            new vscode.NotebookCellData(
+                vscode.NotebookCellKind.Code,
+                `-- View with JOINs
+CREATE OR REPLACE VIEW ${schema}.user_orders_summary AS
+SELECT 
+    u.id as user_id,
+    u.name as user_name,
+    o.id as order_id,
+    o.total_amount,
+    o.created_at
+FROM 
+    ${schema}.users u
+    INNER JOIN ${schema}.orders o ON u.id = o.user_id
+WHERE 
+    o.status = 'completed';`,
+                'sql'
+            ),
+            new vscode.NotebookCellData(
+                vscode.NotebookCellKind.Markup,
+                `##### 📊 Aggregated View`,
+                'markdown'
+            ),
+            new vscode.NotebookCellData(
+                vscode.NotebookCellKind.Code,
+                `-- View with aggregations
+CREATE OR REPLACE VIEW ${schema}.sales_summary AS
+SELECT 
+    product_id,
+    COUNT(*) as total_orders,
+    SUM(quantity) as total_quantity,
+    SUM(amount) as total_revenue,
+    AVG(amount) as avg_order_value
+FROM 
+    ${schema}.order_items
+GROUP BY 
+    product_id;`,
+                'sql'
+            ),
+            new vscode.NotebookCellData(
+                vscode.NotebookCellKind.Markup,
+                `##### 🔒 Security View (Row-Level Access)`,
+                'markdown'
+            ),
+            new vscode.NotebookCellData(
+                vscode.NotebookCellKind.Code,
+                `-- View that restricts data access
+CREATE OR REPLACE VIEW ${schema}.my_documents AS
+SELECT 
+    id,
+    title,
+    content,
+    created_at
+FROM 
+    ${schema}.documents
+WHERE 
+    created_by = current_user_id()
+    AND deleted_at IS NULL;`,
+                'sql'
+            ),
+            new vscode.NotebookCellData(
+                vscode.NotebookCellKind.Markup,
+                `##### 🧮 Computed View (Calculated Columns)`,
+                'markdown'
+            ),
+            new vscode.NotebookCellData(
+                vscode.NotebookCellKind.Code,
+                `-- View with calculated columns
+CREATE OR REPLACE VIEW ${schema}.product_pricing AS
+SELECT 
+    id,
+    name,
+    base_price,
+    discount_percent,
+    base_price * (1 - discount_percent / 100.0) as final_price,
+    CASE 
+        WHEN discount_percent > 20 THEN 'High Discount'
+        WHEN discount_percent > 10 THEN 'Medium Discount'
+        ELSE 'Low Discount'
+    END as discount_category
+FROM 
+    ${schema}.products
+WHERE 
+    is_active = true;`,
+                'sql'
+            ),
+            new vscode.NotebookCellData(
+                vscode.NotebookCellKind.Markup,
+                `##### 🔄 Recursive View (CTE)`,
+                'markdown'
+            ),
+            new vscode.NotebookCellData(
+                vscode.NotebookCellKind.Code,
+                `-- View using Common Table Expression (CTE)
+CREATE OR REPLACE VIEW ${schema}.category_hierarchy AS
+WITH RECURSIVE category_tree AS (
+    -- Base case: root categories
+    SELECT 
+        id,
+        name,
+        parent_id,
+        0 as level,
+        name as path
+    FROM 
+        ${schema}.categories
+    WHERE 
+        parent_id IS NULL
+    
+    UNION ALL
+    
+    -- Recursive case: child categories
+    SELECT 
+        c.id,
+        c.name,
+        c.parent_id,
+        ct.level + 1,
+        ct.path || ' > ' || c.name
+    FROM 
+        ${schema}.categories c
+        INNER JOIN category_tree ct ON c.parent_id = ct.id
+)
+SELECT * FROM category_tree;`,
+                'sql'
+            ),
+            new vscode.NotebookCellData(
+                vscode.NotebookCellKind.Markup,
+                MarkdownUtils.warningBox('After creating a view, remember to: 1) Test the view with sample queries, 2) Add appropriate indexes on underlying tables if needed, 3) Grant necessary permissions to roles, 4) Consider materialized views for expensive queries.'),
+                'markdown'
             )
         ];
 
         await createAndShowNotebook(cells, metadata);
     } catch (err: any) {
-        vscode.window.showErrorMessage(`Failed to create view notebook: ${err.message}`);
+        await ErrorHandlers.handleCommandError(err, 'create view notebook');
     }
 }

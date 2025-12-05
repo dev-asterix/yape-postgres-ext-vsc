@@ -2,6 +2,13 @@ import * as vscode from 'vscode';
 import { createAndShowNotebook, createMetadata, getConnectionWithPassword, validateItem } from '../commands/connection';
 import { DatabaseTreeItem, DatabaseTreeProvider } from '../providers/DatabaseTreeProvider';
 import { ConnectionManager } from '../services/ConnectionManager';
+import { 
+    MarkdownUtils, 
+    FormatHelpers, 
+    ErrorHandlers, 
+    SQL_TEMPLATES, 
+    ObjectUtils
+} from './helper';
 
 /**
  * cmdEnableExtension - Command to create a notebook for enabling a PostgreSQL extension'
@@ -29,15 +36,14 @@ export async function cmdEnableExtension(item: DatabaseTreeItem, context: vscode
             // Extract extension name from label (removes version info)
             const extensionName = item.label.split(' ')[0];
 
+            const markdown = MarkdownUtils.header(`🔌 Enable Extension: \`${extensionName}\``) +
+                MarkdownUtils.infoBox('Execute the cell below to enable the PostgreSQL extension. This will install the extension in the current database.') +
+                (item.comment ? MarkdownUtils.infoBox(`<strong>Description:</strong> ${item.comment}`) : '');
+
             const cells = [
                 new vscode.NotebookCellData(
                     vscode.NotebookCellKind.Markup,
-                    `### Enable Extension: \`${extensionName}\`
-
-<div style="font-size: 12px; background-color: #2b3a42; border-left: 3px solid #3498db; padding: 6px 10px; margin-bottom: 15px; border-radius: 3px;">
-    <strong>ℹ️ Note:</strong> Execute the cell below to enable the PostgreSQL extension. This will install the extension in the current database.
-</div>
-${item.comment ? `<div style="font-size: 12px; background-color: #2b3a42; border-left: 3px solid #3498db; padding: 6px 10px; margin-bottom: 15px; border-radius: 3px;"><strong>ℹ️ Description:</strong> ${item.comment}</div>` : ''}`,
+                    markdown,
                     'markdown'
                 ),
                 new vscode.NotebookCellData(
@@ -57,7 +63,7 @@ ${item.comment ? `<div style="font-size: 12px; background-color: #2b3a42; border
             // Connection is managed by ConnectionManager, no need to close explicitly here
         }
     } catch (err: any) {
-        vscode.window.showErrorMessage(`Failed to create extension notebook: ${err.message} `);
+        await ErrorHandlers.handleCommandError(err, 'create extension notebook');
     }
 }
 
@@ -85,24 +91,20 @@ export async function cmdExtensionOperations(item: DatabaseTreeItem, context: vs
             // Extract extension name from label (removes version info)
             const extensionName = item.label.split(' ')[0];
 
+            const markdown = MarkdownUtils.header(`🔌 Extension Operations: \`${extensionName}\``) +
+                MarkdownUtils.infoBox('This notebook contains common operations for managing PostgreSQL extensions. Run the cells below to execute the operations.') +
+                (item.comment ? MarkdownUtils.infoBox(`<strong>Description:</strong> ${item.comment}`) : '') +
+                `\n\n#### 🎯 Available Operations\n\n` +
+                MarkdownUtils.operationsTable([
+                    { operation: '<strong>Enable Extension</strong>', description: 'Install the extension' },
+                    { operation: '<strong>List Objects</strong>', description: 'Show objects created by this extension' },
+                    { operation: '<strong>Drop Extension</strong>', description: 'Remove the extension' }
+                ]);
+
             const cells = [
                 new vscode.NotebookCellData(
                     vscode.NotebookCellKind.Markup,
-                    `### Extension Operations: \`${extensionName}\`
-
-<div style="font-size: 12px; background-color: #2b3a42; border-left: 3px solid #3498db; padding: 6px 10px; margin-bottom: 15px; border-radius: 3px;">
-    <strong>ℹ️ Note:</strong> This notebook contains common operations for managing PostgreSQL extensions. Run the cells below to execute the operations.
-</div>
-${item.comment ? `<div style="font-size: 12px; background-color: #2b3a42; border-left: 3px solid #3498db; padding: 6px 10px; margin-bottom: 15px; border-radius: 3px;"><strong>ℹ️ Description:</strong> ${item.comment}</div>` : ''}
-
-#### 🎯 Available Operations
-
-<table style="font-size: 11px; width: 100%; border-collapse: collapse;">
-    <tr><th style="text-align: left;">Operation</th><th style="text-align: left;">Description</th></tr>
-    <tr><td><strong>Enable Extension</strong></td><td>Install the extension</td></tr>
-    <tr><td><strong>List Objects</strong></td><td>Show objects created by this extension</td></tr>
-    <tr><td><strong>Drop Extension</strong></td><td>Remove the extension</td></tr>
-</table>`,
+                    markdown,
                     'markdown'
                 ),
                 new vscode.NotebookCellData(
@@ -146,7 +148,7 @@ ${item.comment ? `<div style="font-size: 12px; background-color: #2b3a42; border
             // Connection is managed by ConnectionManager
         }
     } catch (err: any) {
-        vscode.window.showErrorMessage(`Failed to create extension operations notebook: ${err.message} `);
+        await ErrorHandlers.handleCommandError(err, 'create extension operations notebook');
     }
 }
 
@@ -177,11 +179,8 @@ export async function cmdDropExtension(item: DatabaseTreeItem, context: vscode.E
             const cells = [
                 new vscode.NotebookCellData(
                     vscode.NotebookCellKind.Markup,
-                    `### Drop Extension: \`${extensionName}\`
-
-<div style="font-size: 12px; background-color: #3e2d2d; border-left: 3px solid #e74c3c; padding: 6px 10px; margin-bottom: 15px; border-radius: 3px;">
-    <strong>🛑 Caution:</strong> This action will remove the PostgreSQL extension and all its objects. This operation cannot be undone.
-</div>`,
+                    MarkdownUtils.header(`❌ Drop Extension: \`${extensionName}\``) +
+                    MarkdownUtils.dangerBox('This action will remove the PostgreSQL extension and all its objects. This operation cannot be undone.'),
                     'markdown'
                 ),
                 new vscode.NotebookCellData(
@@ -201,7 +200,7 @@ export async function cmdDropExtension(item: DatabaseTreeItem, context: vscode.E
             // Connection is managed by ConnectionManager
         }
     } catch (err: any) {
-        vscode.window.showErrorMessage(`Failed to create drop extension notebook: ${err.message} `);
+        await ErrorHandlers.handleCommandError(err, 'create drop extension notebook');
     }
 }
 

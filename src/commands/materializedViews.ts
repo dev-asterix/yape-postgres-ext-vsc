@@ -2,6 +2,13 @@ import * as vscode from 'vscode';
 import { createAndShowNotebook, createMetadata, getConnectionWithPassword, validateItem } from '../commands/connection';
 import { DatabaseTreeItem } from '../providers/DatabaseTreeProvider';
 import { ConnectionManager } from '../services/ConnectionManager';
+import { 
+    MarkdownUtils, 
+    FormatHelpers, 
+    ErrorHandlers, 
+    SQL_TEMPLATES, 
+    ObjectUtils
+} from './helper';
 
 /**
  * SQL Queries for materialized view operations
@@ -41,11 +48,8 @@ export async function cmdRefreshMatView(item: DatabaseTreeItem, context: vscode.
         const cells = [
             new vscode.NotebookCellData(
                 vscode.NotebookCellKind.Markup,
-                `### Refresh Materialized View: \`${item.schema}.${item.label}\`
-
-<div style="font-size: 12px; background-color: #2b3a42; border-left: 3px solid #3498db; padding: 6px 10px; margin-bottom: 15px; border-radius: 3px;">
-    <strong>ℹ️ Note:</strong> Execute the cell below to refresh the materialized view data.
-</div>`,
+                MarkdownUtils.header(`🔄 Refresh Materialized View: \`${item.schema}.${item.label}\``) +
+                MarkdownUtils.infoBox('Execute the cell below to refresh the materialized view data.'),
                 'markdown'
             ),
             new vscode.NotebookCellData(
@@ -62,7 +66,7 @@ export async function cmdRefreshMatView(item: DatabaseTreeItem, context: vscode.
 
         await createAndShowNotebook(cells, metadata);
     } catch (err: any) {
-        vscode.window.showErrorMessage(`Failed to create refresh materialized view notebook: ${err.message}`);
+        await ErrorHandlers.handleCommandError(err, 'create refresh materialized view notebook');
     }
 }
 
@@ -92,15 +96,9 @@ export async function cmdEditMatView(item: DatabaseTreeItem, context: vscode.Ext
             const cells = [
                 new vscode.NotebookCellData(
                     vscode.NotebookCellKind.Markup,
-                    `### Edit Materialized View: \`${item.schema}.${item.label}\`
-
-<div style="font-size: 12px; background-color: #2b3a42; border-left: 3px solid #3498db; padding: 6px 10px; margin-bottom: 15px; border-radius: 3px;">
-    <strong>ℹ️ Note:</strong> Modify the materialized view definition below and execute the cell to update it.
-</div>
-
-<div style="font-size: 12px; background-color: #3e2d2d; border-left: 3px solid #e74c3c; padding: 6px 10px; margin-bottom: 15px; border-radius: 3px;">
-    <strong>⚠️ Warning:</strong> This will drop and recreate the materialized view.
-</div>`,
+                    MarkdownUtils.header(`✏️ Edit Materialized View: \`${item.schema}.${item.label}\``) +
+                    MarkdownUtils.infoBox('Modify the materialized view definition below and execute the cell to update it.') +
+                    MarkdownUtils.warningBox('This will drop and recreate the materialized view.'),
                     'markdown'
                 ),
                 new vscode.NotebookCellData(
@@ -120,7 +118,7 @@ export async function cmdEditMatView(item: DatabaseTreeItem, context: vscode.Ext
             // Connection is managed by ConnectionManager
         }
     } catch (err: any) {
-        vscode.window.showErrorMessage(`Failed to create materialized view edit notebook: ${err.message}`);
+        await ErrorHandlers.handleCommandError(err, 'create materialized view edit notebook');
     }
 }
 
@@ -133,11 +131,8 @@ export async function cmdViewMatViewData(item: DatabaseTreeItem, context: vscode
         const cells = [
             new vscode.NotebookCellData(
                 vscode.NotebookCellKind.Markup,
-                `### View Data: \`${item.schema}.${item.label}\`
-
-<div style="font-size: 12px; background-color: #2b3a42; border-left: 3px solid #3498db; padding: 6px 10px; margin-bottom: 15px; border-radius: 3px;">
-    <strong>ℹ️ Note:</strong> Modify the query below to filter or transform the data as needed.
-</div>`,
+                MarkdownUtils.header(`📖 View Data: \`${item.schema}.${item.label}\``) +
+                MarkdownUtils.infoBox('Modify the query below to filter or transform the data as needed.'),
                 'markdown'
             ),
             new vscode.NotebookCellData(
@@ -156,7 +151,7 @@ LIMIT 100;`,
 
         await createAndShowNotebook(cells, metadata);
     } catch (err: any) {
-        vscode.window.showErrorMessage(`Failed to create view data notebook: ${err.message}`);
+        await ErrorHandlers.handleCommandError(err, 'create view data notebook');
     }
 }
 
@@ -292,14 +287,6 @@ export async function cmdViewMatViewProperties(item: DatabaseTreeItem, context: 
 
             const metadata = createMetadata(connection, item.databaseName);
 
-            const getKindLabel = (kind: string) => {
-                switch (kind) {
-                    case 'r': return '📊 Table';
-                    case 'v': return '👁️ View';
-                    case 'm': return '💾 Materialized View';
-                    default: return kind;
-                }
-            };
 
             // Build column table HTML
             const columnRows = columns.map(col => {
@@ -312,7 +299,7 @@ export async function cmdViewMatViewProperties(item: DatabaseTreeItem, context: 
         <td>${col.ordinal_position}</td>
         <td><strong>${col.column_name}</strong></td>
         <td><code>${dataType}</code></td>
-        <td>${col.is_nullable === 'YES' ? '✅' : '🚫'}</td>
+        <td>${FormatHelpers.formatBoolean(col.is_nullable === 'YES')}</td>
         <td>${col.default_value ? `<code>${col.default_value}</code>` : '—'}</td>
         <td>${col.description || '—'}</td>
     </tr>`;
@@ -333,7 +320,7 @@ export async function cmdViewMatViewProperties(item: DatabaseTreeItem, context: 
             // Build dependencies table HTML
             const dependencyRows = dependents.map(dep => {
                 return `    <tr>
-        <td>${getKindLabel(dep.kind)}</td>
+        <td>${ObjectUtils.getKindLabel(dep.kind)}</td>
         <td><code>${dep.schema}.${dep.name}</code></td>
     </tr>`;
             }).join('\n');
@@ -341,36 +328,29 @@ export async function cmdViewMatViewProperties(item: DatabaseTreeItem, context: 
             // Build references table HTML
             const referenceRows = references.map(ref => {
                 return `    <tr>
-        <td>${getKindLabel(ref.kind)}</td>
+        <td>${ObjectUtils.getKindLabel(ref.kind)}</td>
         <td><code>${ref.schema}.${ref.name}</code></td>
     </tr>`;
             }).join('\n');
 
-            const markdown = `### 💾 Materialized View Properties: \`${item.schema}.${item.label}\`
-
-<div style="font-size: 12px; background-color: #2b3a42; border-left: 3px solid #3498db; padding: 6px 10px; margin-bottom: 15px; border-radius: 3px;">
-    <strong>ℹ️ Owner:</strong> ${matview.owner} | <strong>Populated:</strong> ${matview.ispopulated ? '✅ Yes' : '🚫 No'} ${matview.comment ? `| <strong>Comment:</strong> ${matview.comment}` : ''}
-</div>
-
-#### 📊 General Information
-
-<table style="font-size: 11px; width: 100%; border-collapse: collapse;">
-    <tr><th style="text-align: left; width: 30%;">Property</th><th style="text-align: left;">Value</th></tr>
-    <tr><td><strong>Schema</strong></td><td>${matview.schema_name}</td></tr>
-    <tr><td><strong>Name</strong></td><td>${matview.matview_name}</td></tr>
-    <tr><td><strong>Owner</strong></td><td>${matview.owner}</td></tr>
-    <tr><td><strong>Is Populated</strong></td><td>${matview.ispopulated ? '✅ Yes' : '🚫 No'}</td></tr>
-    <tr><td><strong>Total Size</strong></td><td>${matview.total_size}</td></tr>
-    <tr><td><strong>Table Size</strong></td><td>${matview.table_size}</td></tr>
-    <tr><td><strong>Indexes Size</strong></td><td>${matview.indexes_size}</td></tr>
-    <tr><td><strong>Row Estimate</strong></td><td>${matview.row_estimate?.toLocaleString() || 'N/A'}</td></tr>
-    <tr><td><strong>Live Tuples</strong></td><td>${stats.live_tuples?.toLocaleString() || 'N/A'}</td></tr>
-    <tr><td><strong>Dead Tuples</strong></td><td>${stats.dead_tuples?.toLocaleString() || 'N/A'}</td></tr>
-</table>
-
-#### 📋 Columns (${columns.length})
-
-<table style="font-size: 11px; width: 100%; border-collapse: collapse;">
+            const ownerInfo = `${matview.owner} | <strong>Populated:</strong> ${FormatHelpers.formatBoolean(matview.ispopulated, 'Yes', 'No')}${matview.comment ? ` | <strong>Comment:</strong> ${matview.comment}` : ''}`;
+            const markdown = MarkdownUtils.header(`💾 Materialized View Properties: \`${item.schema}.${item.label}\``) +
+                MarkdownUtils.infoBox(`<strong>Owner:</strong> ${ownerInfo}`) +
+                `\n\n#### 📊 General Information\n\n` +
+                MarkdownUtils.propertiesTable({
+                    'Schema': matview.schema_name,
+                    'Name': matview.matview_name,
+                    'Owner': matview.owner,
+                    'Is Populated': FormatHelpers.formatBoolean(matview.ispopulated, 'Yes', 'No'),
+                    'Total Size': matview.total_size,
+                    'Table Size': matview.table_size,
+                    'Indexes Size': matview.indexes_size,
+                    'Row Estimate': matview.row_estimate?.toLocaleString() || 'N/A',
+                    'Live Tuples': stats.live_tuples?.toLocaleString() || 'N/A',
+                    'Dead Tuples': stats.dead_tuples?.toLocaleString() || 'N/A'
+                }) +
+                `\n\n#### 📋 Columns (${columns.length})\n\n` +
+                `<table style="font-size: 11px; width: 100%; border-collapse: collapse;">
     <tr>
         <th style="text-align: left; width: 5%;">#</th>
         <th style="text-align: left; width: 20%;">Name</th>
@@ -382,7 +362,8 @@ export async function cmdViewMatViewProperties(item: DatabaseTreeItem, context: 
 ${columnRows}
 </table>
 
-${indexes.length > 0 ? `#### 🔍 Indexes (${indexes.length})
+` +
+                (indexes.length > 0 ? `#### 🔍 Indexes (${indexes.length})
 
 <table style="font-size: 11px; width: 100%; border-collapse: collapse;">
     <tr>
@@ -393,11 +374,10 @@ ${indexes.length > 0 ? `#### 🔍 Indexes (${indexes.length})
 ${indexRows}
 </table>
 
-` : ''}${references.length > 0 ? `#### 🔗 Referenced Objects (${references.length})
+` : '') +
+                (references.length > 0 ? `#### 🔗 Referenced Objects (${references.length})
 
-<div style="font-size: 11px; background-color: #2d3a42; border-left: 3px solid #9b59b6; padding: 6px 10px; margin-bottom: 10px; border-radius: 3px;">
-    Objects that this materialized view depends on:
-</div>
+${MarkdownUtils.infoBox('Objects that this materialized view depends on:', 'Info')}
 
 <table style="font-size: 11px; width: 100%; border-collapse: collapse;">
     <tr>
@@ -407,11 +387,10 @@ ${indexRows}
 ${referenceRows}
 </table>
 
-` : ''}${dependents.length > 0 ? `#### 🔄 Dependent Objects (${dependents.length})
+` : '') +
+                (dependents.length > 0 ? `#### 🔄 Dependent Objects (${dependents.length})
 
-<div style="font-size: 11px; background-color: #3a2d42; border-left: 3px solid #e67e22; padding: 6px 10px; margin-bottom: 10px; border-radius: 3px;">
-    Objects that depend on this materialized view:
-</div>
+${MarkdownUtils.infoBox('Objects that depend on this materialized view:', 'Info')}
 
 <table style="font-size: 11px; width: 100%; border-collapse: collapse;">
     <tr>
@@ -421,7 +400,8 @@ ${referenceRows}
 ${dependencyRows}
 </table>
 
-` : ''}---`;
+` : '') +
+                '---';
 
             const cells = [
                 new vscode.NotebookCellData(vscode.NotebookCellKind.Markup, markdown, 'markdown'),
@@ -452,7 +432,13 @@ ${dependencyRows}
                 ),
                 new vscode.NotebookCellData(
                     vscode.NotebookCellKind.Code,
-                    `-- Drop materialized view (with dependencies)\nDROP MATERIALIZED VIEW IF EXISTS ${item.schema}.${item.label} CASCADE;\n\n-- Drop materialized view (without dependencies - will fail if referenced)\n-- DROP MATERIALIZED VIEW IF EXISTS ${item.schema}.${item.label} RESTRICT;`,
+                    `${SQL_TEMPLATES.DROP.MATERIALIZED_VIEW(item.schema!, item.label)}
+
+-- Drop materialized view (with dependencies)
+-- DROP MATERIALIZED VIEW IF EXISTS ${item.schema}.${item.label} CASCADE;
+
+-- Drop materialized view (without dependencies - will fail if referenced)
+-- DROP MATERIALIZED VIEW IF EXISTS ${item.schema}.${item.label} RESTRICT;`,
                     'sql'
                 ),
                 new vscode.NotebookCellData(
@@ -482,7 +468,7 @@ ${dependencyRows}
             // Connection is managed by ConnectionManager
         }
     } catch (err: any) {
-        vscode.window.showErrorMessage(`Failed to show materialized view properties: ${err.message}`);
+        await ErrorHandlers.handleCommandError(err, 'show materialized view properties');
     }
 }
 
@@ -495,11 +481,8 @@ export async function cmdDropMatView(item: DatabaseTreeItem, context: vscode.Ext
         const cells = [
             new vscode.NotebookCellData(
                 vscode.NotebookCellKind.Markup,
-                `### Drop Materialized View: \`${item.schema}.${item.label}\`
-
-<div style="font-size: 12px; background-color: #3e2d2d; border-left: 3px solid #e74c3c; padding: 6px 10px; margin-bottom: 15px; border-radius: 3px;">
-    <strong>🛑 Caution:</strong> This action will permanently delete the materialized view. This operation cannot be undone.
-</div>`,
+                MarkdownUtils.header(`❌ Drop Materialized View: \`${item.schema}.${item.label}\``) +
+                MarkdownUtils.dangerBox('This action will permanently delete the materialized view. This operation cannot be undone.'),
                 'markdown'
             ),
             new vscode.NotebookCellData(
@@ -509,15 +492,14 @@ export async function cmdDropMatView(item: DatabaseTreeItem, context: vscode.Ext
             ),
             new vscode.NotebookCellData(
                 vscode.NotebookCellKind.Code,
-                `-- Drop materialized view
-DROP MATERIALIZED VIEW IF EXISTS ${item.schema}.${item.label};`,
+                SQL_TEMPLATES.DROP.MATERIALIZED_VIEW(item.schema!, item.label),
                 'sql'
             )
         ];
 
         await createAndShowNotebook(cells, metadata);
     } catch (err: any) {
-        vscode.window.showErrorMessage(`Failed to create drop materialized view notebook: ${err.message}`);
+        await ErrorHandlers.handleCommandError(err, 'create drop materialized view notebook');
     }
 }
 
@@ -527,59 +509,24 @@ export async function cmdMatViewOperations(item: DatabaseTreeItem, context: vsco
         const connection = await getConnectionWithPassword(item.connectionId!);
         const metadata = createMetadata(connection, item.databaseName);
 
-        const markdown = `### 🔄 Materialized View Operations: \`${item.schema}.${item.label}\`
-
-<div style="font-size: 12px; background-color: #2b3a42; border-left: 3px solid #3498db; padding: 8px 12px; margin-bottom: 15px; border-radius: 3px;">
-    <strong>ℹ️ About Materialized Views:</strong> Materialized views store query results as physical tables that need periodic refreshing. They provide faster query performance at the cost of data freshness.
-</div>
-
-#### 📋 Common Operations
-
-<table style="font-size: 11px; width: 100%; border-collapse: collapse;">
-    <tr>
-        <th style="text-align: left; width: 25%;">Operation</th>
-        <th style="text-align: left; width: 50%;">Description</th>
-        <th style="text-align: left;">Use Case</th>
-    </tr>
-    <tr>
-        <td><strong>🔄 Refresh</strong></td>
-        <td>Updates the materialized view with fresh data from underlying tables. Locks the view during refresh.</td>
-        <td>Standard data refresh</td>
-    </tr>
-    <tr>
-        <td><strong>⚡ Concurrent Refresh</strong></td>
-        <td>Refreshes without locking (requires unique index). Allows reads during refresh.</td>
-        <td>High-availability scenarios</td>
-    </tr>
-    <tr>
-        <td><strong>🔍 Create Index</strong></td>
-        <td>Adds indexes to improve query performance on the materialized view.</td>
-        <td>Query optimization</td>
-    </tr>
-    <tr>
-        <td><strong>📊 Analyze</strong></td>
-        <td>Updates statistics for the query planner to optimize query execution.</td>
-        <td>After large refreshes</td>
-    </tr>
-    <tr>
-        <td><strong>🔍 Query Data</strong></td>
-        <td>Query the materialized view data like a regular table.</td>
-        <td>Data analysis</td>
-    </tr>
-    <tr>
-        <td><strong>📈 Check Freshness</strong></td>
-        <td>View when the materialized view was last refreshed.</td>
-        <td>Monitoring data staleness</td>
-    </tr>
-</table>
-
----`;
+        const markdown = MarkdownUtils.header(`🔄 Materialized View Operations: \`${item.schema}.${item.label}\``) +
+            MarkdownUtils.infoBox('Materialized views store query results as physical tables that need periodic refreshing. They provide faster query performance at the cost of data freshness.') +
+            `\n\n#### 📋 Common Operations\n\n` +
+            MarkdownUtils.operationsTable([
+                { operation: '🔄 Refresh', description: 'Updates the materialized view with fresh data from underlying tables. Locks the view during refresh.', riskLevel: 'Standard data refresh' },
+                { operation: '⚡ Concurrent Refresh', description: 'Refreshes without locking (requires unique index). Allows reads during refresh.', riskLevel: 'High-availability scenarios' },
+                { operation: '🔍 Create Index', description: 'Adds indexes to improve query performance on the materialized view.', riskLevel: 'Query optimization' },
+                { operation: '📊 Analyze', description: 'Updates statistics for the query planner to optimize query execution.', riskLevel: 'After large refreshes' },
+                { operation: '🔍 Query Data', description: 'Query the materialized view data like a regular table.', riskLevel: 'Data analysis' },
+                { operation: '📈 Check Freshness', description: 'View when the materialized view was last refreshed.', riskLevel: 'Monitoring data staleness' }
+            ]) +
+            `\n\n---`;
 
         const cells = [
             new vscode.NotebookCellData(vscode.NotebookCellKind.Markup, markdown, 'markdown'),
             new vscode.NotebookCellData(
                 vscode.NotebookCellKind.Markup,
-                `##### 🔄 Standard Refresh\n\n<div style="font-size: 11px; background-color: #2d3842; border-left: 3px solid #e74c3c; padding: 6px 10px; margin-bottom: 8px; border-radius: 3px;">\n    <strong>⚠️ Warning:</strong> This operation locks the materialized view and prevents reads during refresh.\n</div>`,
+                `##### 🔄 Standard Refresh\n\n${MarkdownUtils.warningBox('This operation locks the materialized view and prevents reads during refresh.')}`,
                 'markdown'
             ),
             new vscode.NotebookCellData(
@@ -589,7 +536,7 @@ export async function cmdMatViewOperations(item: DatabaseTreeItem, context: vsco
             ),
             new vscode.NotebookCellData(
                 vscode.NotebookCellKind.Markup,
-                `##### ⚡ Concurrent Refresh\n\n<div style="font-size: 11px; background-color: #2d3842; border-left: 3px solid #f39c12; padding: 6px 10px; margin-bottom: 8px; border-radius: 3px;">\n    <strong>📝 Note:</strong> Requires a unique index. Allows queries during refresh but is slower than standard refresh.\n</div>`,
+                `##### ⚡ Concurrent Refresh\n\n${MarkdownUtils.infoBox('Requires a unique index. Allows queries during refresh but is slower than standard refresh.', 'Note')}`,
                 'markdown'
             ),
             new vscode.NotebookCellData(
@@ -599,7 +546,7 @@ export async function cmdMatViewOperations(item: DatabaseTreeItem, context: vsco
             ),
             new vscode.NotebookCellData(
                 vscode.NotebookCellKind.Markup,
-                `##### 🔍 Create Indexes\n\n<div style="font-size: 11px; background-color: #2d3842; border-left: 3px solid #2ecc71; padding: 6px 10px; margin-bottom: 8px; border-radius: 3px;">\n    <strong>💡 Tip:</strong> Indexes on materialized views improve query performance, just like on regular tables.\n</div>`,
+                `##### 🔍 Create Indexes\n\n${MarkdownUtils.successBox('Indexes on materialized views improve query performance, just like on regular tables.')}`,
                 'markdown'
             ),
             new vscode.NotebookCellData(
@@ -649,14 +596,14 @@ export async function cmdMatViewOperations(item: DatabaseTreeItem, context: vsco
             ),
             new vscode.NotebookCellData(
                 vscode.NotebookCellKind.Markup,
-                `##### 📚 Best Practices\n\n<div style="font-size: 11px; background-color: #2d3842; border-left: 3px solid #9b59b6; padding: 8px 12px; margin-top: 8px; border-radius: 3px;\">\n    <strong>✨ Refresh Strategy:</strong>\n    <ul style=\"margin: 5px 0;\">\n        <li>Use <code>REFRESH MATERIALIZED VIEW CONCURRENTLY</code> for high-availability scenarios (requires unique index)</li>\n        <li>Schedule regular refreshes based on data freshness requirements</li>\n        <li>Run <code>ANALYZE</code> after large refreshes to update statistics</li>\n        <li>Monitor materialized view size and query performance</li>\n        <li>Consider partitioning for very large materialized views</li>\n    </ul>\n</div>`,
+                `##### 📚 Best Practices\n\n${MarkdownUtils.infoBox(`<strong>✨ Refresh Strategy:</strong><br/>• Use <code>REFRESH MATERIALIZED VIEW CONCURRENTLY</code> for high-availability scenarios (requires unique index)<br/>• Schedule regular refreshes based on data freshness requirements<br/>• Run <code>ANALYZE</code> after large refreshes to update statistics<br/>• Monitor materialized view size and query performance<br/>• Consider partitioning for very large materialized views`, 'Best Practices')}`,
                 'markdown'
             )
         ];
 
         await createAndShowNotebook(cells, metadata);
     } catch (err: any) {
-        vscode.window.showErrorMessage(`Failed to show materialized view operations: ${err.message}`);
+        await ErrorHandlers.handleCommandError(err, 'show materialized view operations');
     }
 }
 
@@ -669,43 +616,206 @@ export async function cmdCreateMaterializedView(item: DatabaseTreeItem, context:
         const connection = await getConnectionWithPassword(item.connectionId!);
         const metadata = createMetadata(connection, item.databaseName);
 
-        const cells = [
-            new vscode.NotebookCellData(
-                vscode.NotebookCellKind.Markup,
-                `### Create New Materialized View in Schema: \`${item.schema}\`
+        const schema = item.schema!;
 
-<div style="font-size: 12px; background-color: #2b3a42; border-left: 3px solid #3498db; padding: 6px 10px; margin-bottom: 15px; border-radius: 3px;">
-    <strong>ℹ️ Note:</strong> Modify the definition below and execute the cell to create the materialized view.
-</div>`,
-                'markdown'
-            ),
+        const markdown = MarkdownUtils.header(`➕ Create New Materialized View in Schema: \`${schema}\``) +
+            MarkdownUtils.infoBox('This notebook provides templates for creating materialized views. Modify the templates below and execute to create materialized views.') +
+            `\n\n#### 📋 Materialized View Design Guidelines\n\n` +
+            MarkdownUtils.operationsTable([
+                { operation: '<strong>Naming</strong>', description: 'Use snake_case for materialized view names (e.g., sales_summary, user_statistics)' },
+                { operation: '<strong>Purpose</strong>', description: 'Store pre-computed query results for faster access to expensive queries' },
+                { operation: '<strong>Refresh Strategy</strong>', description: 'Plan regular refreshes based on data freshness requirements' },
+                { operation: '<strong>Indexes</strong>', description: 'Create unique indexes to enable CONCURRENT refresh' },
+                { operation: '<strong>Performance</strong>', description: 'Trade data freshness for query speed - data is stored physically' }
+            ]) +
+            `\n\n#### 🏷️ Materialized View vs Regular View\n\n` +
+            MarkdownUtils.propertiesTable({
+                'Regular View': 'Virtual - queries underlying tables each time',
+                'Materialized View': 'Physical - stores data, requires refresh',
+                'Query Speed': 'Regular: Slower | Materialized: Faster',
+                'Data Freshness': 'Regular: Always current | Materialized: Stale until refresh',
+                'Storage': 'Regular: None | Materialized: Uses disk space',
+                'Refresh': 'Regular: Automatic | Materialized: Manual or scheduled'
+            }) +
+            MarkdownUtils.successBox('Use materialized views for expensive aggregations, complex joins, or frequently accessed query results. Create a unique index to enable CONCURRENT refresh.') +
+            `\n\n---`;
+
+        const cells = [
+            new vscode.NotebookCellData(vscode.NotebookCellKind.Markup, markdown, 'markdown'),
             new vscode.NotebookCellData(
                 vscode.NotebookCellKind.Markup,
-                `##### 📝 Materialized View Definition`,
+                `##### 📝 Basic Materialized View (Recommended Start)`,
                 'markdown'
             ),
             new vscode.NotebookCellData(
                 vscode.NotebookCellKind.Code,
-                `-- Create new materialized view
-CREATE MATERIALIZED VIEW ${item.schema}.matview_name AS
+                `-- Create basic materialized view
+CREATE MATERIALIZED VIEW ${schema}.matview_name AS
 SELECT 
     column1, 
-    column2
-FROM source_table
+    column2,
+    COUNT(*) as count
+FROM ${schema}.source_table
 WHERE condition = true
 WITH DATA;
 
--- Add unique index (recommended, enables concurrent refresh)
-CREATE UNIQUE INDEX idx_matview_name_column1 ON ${item.schema}.matview_name (column1);
+-- Add unique index (enables concurrent refresh)
+CREATE UNIQUE INDEX idx_matview_name_id ON ${schema}.matview_name (column1);
 
 -- Add comment
-COMMENT ON MATERIALIZED VIEW ${item.schema}.matview_name IS 'Materialized view description';`,
+COMMENT ON MATERIALIZED VIEW ${schema}.matview_name IS 'Materialized view description';`,
                 'sql'
+            ),
+            new vscode.NotebookCellData(
+                vscode.NotebookCellKind.Markup,
+                `##### 📊 Aggregated Materialized View`,
+                'markdown'
+            ),
+            new vscode.NotebookCellData(
+                vscode.NotebookCellKind.Code,
+                `-- Materialized view with aggregations
+CREATE MATERIALIZED VIEW ${schema}.sales_summary AS
+SELECT 
+    product_id,
+    DATE_TRUNC('month', order_date) as month,
+    COUNT(*) as order_count,
+    SUM(quantity) as total_quantity,
+    SUM(amount) as total_revenue,
+    AVG(amount) as avg_order_value
+FROM ${schema}.orders o
+JOIN ${schema}.order_items oi ON o.id = oi.order_id
+GROUP BY product_id, DATE_TRUNC('month', order_date)
+WITH DATA;
+
+-- Create unique index for concurrent refresh
+CREATE UNIQUE INDEX idx_sales_summary_unique 
+    ON ${schema}.sales_summary (product_id, month);
+
+-- Create additional indexes for common queries
+CREATE INDEX idx_sales_summary_month ON ${schema}.sales_summary (month);
+CREATE INDEX idx_sales_summary_product ON ${schema}.sales_summary (product_id);`,
+                'sql'
+            ),
+            new vscode.NotebookCellData(
+                vscode.NotebookCellKind.Markup,
+                `##### 🔄 Materialized View with Refresh Strategy`,
+                'markdown'
+            ),
+            new vscode.NotebookCellData(
+                vscode.NotebookCellKind.Code,
+                `-- Create materialized view with refresh setup
+CREATE MATERIALIZED VIEW ${schema}.daily_stats AS
+SELECT 
+    DATE(created_at) as stat_date,
+    COUNT(*) as total_records,
+    COUNT(DISTINCT user_id) as unique_users
+FROM ${schema}.events
+GROUP BY DATE(created_at)
+WITH DATA;
+
+-- Unique index for concurrent refresh
+CREATE UNIQUE INDEX idx_daily_stats_date ON ${schema}.daily_stats (stat_date);
+
+-- Schedule refresh (example using pg_cron extension)
+-- SELECT cron.schedule('refresh-daily-stats', '0 2 * * *', 
+--     'REFRESH MATERIALIZED VIEW CONCURRENTLY ${schema}.daily_stats');`,
+                'sql'
+            ),
+            new vscode.NotebookCellData(
+                vscode.NotebookCellKind.Markup,
+                `##### 🔗 Joined Materialized View`,
+                'markdown'
+            ),
+            new vscode.NotebookCellData(
+                vscode.NotebookCellKind.Code,
+                `-- Materialized view joining multiple tables
+CREATE MATERIALIZED VIEW ${schema}.user_order_summary AS
+SELECT 
+    u.id as user_id,
+    u.name as user_name,
+    u.email,
+    COUNT(o.id) as total_orders,
+    SUM(o.total_amount) as lifetime_value,
+    MAX(o.created_at) as last_order_date
+FROM ${schema}.users u
+LEFT JOIN ${schema}.orders o ON u.id = o.user_id
+GROUP BY u.id, u.name, u.email
+WITH DATA;
+
+-- Create unique index
+CREATE UNIQUE INDEX idx_user_order_summary_user_id 
+    ON ${schema}.user_order_summary (user_id);
+
+-- Create index for common queries
+CREATE INDEX idx_user_order_summary_lifetime_value 
+    ON ${schema}.user_order_summary (lifetime_value DESC);`,
+                'sql'
+            ),
+            new vscode.NotebookCellData(
+                vscode.NotebookCellKind.Markup,
+                `##### 📈 Time-Series Materialized View`,
+                'markdown'
+            ),
+            new vscode.NotebookCellData(
+                vscode.NotebookCellKind.Code,
+                `-- Materialized view for time-series data
+CREATE MATERIALIZED VIEW ${schema}.hourly_metrics AS
+SELECT 
+    DATE_TRUNC('hour', created_at) as hour,
+    metric_type,
+    SUM(value) as total_value,
+    AVG(value) as avg_value,
+    MIN(value) as min_value,
+    MAX(value) as max_value
+FROM ${schema}.metrics
+WHERE created_at >= NOW() - INTERVAL '7 days'
+GROUP BY DATE_TRUNC('hour', created_at), metric_type
+WITH DATA;
+
+-- Create unique index
+CREATE UNIQUE INDEX idx_hourly_metrics_unique 
+    ON ${schema}.hourly_metrics (hour, metric_type);
+
+-- Create index for time-based queries
+CREATE INDEX idx_hourly_metrics_hour ON ${schema}.hourly_metrics (hour DESC);`,
+                'sql'
+            ),
+            new vscode.NotebookCellData(
+                vscode.NotebookCellKind.Markup,
+                `##### 🎯 Materialized View with Filtered Data`,
+                'markdown'
+            ),
+            new vscode.NotebookCellData(
+                vscode.NotebookCellKind.Code,
+                `-- Materialized view with WHERE clause filter
+CREATE MATERIALIZED VIEW ${schema}.active_users_summary AS
+SELECT 
+    u.id,
+    u.name,
+    u.email,
+    COUNT(DISTINCT o.id) as active_orders,
+    SUM(o.total_amount) as active_total
+FROM ${schema}.users u
+JOIN ${schema}.orders o ON u.id = o.user_id
+WHERE o.status = 'active'
+    AND o.created_at >= NOW() - INTERVAL '30 days'
+GROUP BY u.id, u.name, u.email
+WITH DATA;
+
+-- Create unique index
+CREATE UNIQUE INDEX idx_active_users_summary_id 
+    ON ${schema}.active_users_summary (id);`,
+                'sql'
+            ),
+            new vscode.NotebookCellData(
+                vscode.NotebookCellKind.Markup,
+                MarkdownUtils.warningBox('After creating a materialized view, remember to: 1) Create a unique index for concurrent refresh, 2) Set up a refresh schedule, 3) Monitor data freshness, 4) Run ANALYZE after refreshes, 5) Consider partitioning for very large materialized views.'),
+                'markdown'
             )
         ];
 
         await createAndShowNotebook(cells, metadata);
     } catch (err: any) {
-        vscode.window.showErrorMessage(`Failed to create materialized view notebook: ${err.message}`);
+        await ErrorHandlers.handleCommandError(err, 'create materialized view notebook');
     }
 }

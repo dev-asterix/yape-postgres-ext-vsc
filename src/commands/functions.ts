@@ -3,6 +3,13 @@ import { createAndShowNotebook, createMetadata, getConnectionWithPassword, valid
 import { DatabaseTreeItem, DatabaseTreeProvider } from '../providers/DatabaseTreeProvider';
 import { ConnectionManager } from '../services/ConnectionManager';
 import { TablePropertiesPanel } from '../tableProperties';
+import { 
+    MarkdownUtils, 
+    FormatHelpers, 
+    ErrorHandlers, 
+    SQL_TEMPLATES, 
+    ObjectUtils
+} from './helper';
 
 /**
  * Queries for PostgreSQL database
@@ -100,22 +107,15 @@ export async function cmdFunctionOperations(item: DatabaseTreeItem, context: vsc
             const cells = [
                 new vscode.NotebookCellData(
                     vscode.NotebookCellKind.Markup,
-                    `### Function Operations: \`${item.schema}.${item.label}\`
-
-${functionInfo.description ? `<div style="font-size: 12px; background-color: #2b3a42; border-left: 3px solid #3498db; padding: 6px 10px; margin-bottom: 15px; border-radius: 3px;"><strong>ℹ️ Description:</strong> ${functionInfo.description}</div>` : ''}
-
-<div style="font-size: 12px; background-color: #2b3a42; border-left: 3px solid #3498db; padding: 6px 10px; margin-bottom: 15px; border-radius: 3px;">
-    <strong>ℹ️ Note:</strong> This notebook contains common operations for the PostgreSQL function. Run the cells below to execute the operations.
-</div>
-
-#### 🎯 Available Operations
-
-<table style="font-size: 11px; width: 100%; border-collapse: collapse;">
-    <tr><th style="text-align: left;">Operation</th><th style="text-align: left;">Description</th></tr>
-    <tr><td><strong>View Definition</strong></td><td>Show the current function code</td></tr>
-    <tr><td><strong>Call Function</strong></td><td>Template for executing the function</td></tr>
-    <tr><td><strong>Drop</strong></td><td>Delete the function (Warning: Irreversible)</td></tr>
-</table>`,
+                    MarkdownUtils.header(`⚡ Function Operations: \`${item.schema}.${item.label}\``) +
+                    (functionInfo.description ? MarkdownUtils.infoBox(`<strong>Description:</strong> ${functionInfo.description}`) : '') +
+                    MarkdownUtils.infoBox('This notebook contains common operations for the PostgreSQL function. Run the cells below to execute the operations.') +
+                    `\n\n#### 🎯 Available Operations\n\n` +
+                    MarkdownUtils.operationsTable([
+                        { operation: '📝 View Definition', description: 'Show the current function code' },
+                        { operation: '📞 Call Function', description: 'Template for executing the function' },
+                        { operation: '❌ Drop', description: 'Delete the function (Warning: Irreversible)' }
+                    ]),
                     'markdown'
                 ),
                 new vscode.NotebookCellData(
@@ -146,6 +146,11 @@ ${functionInfo.description ? `<div style="font-size: 12px; background-color: #2b
                     `##### ❌ Drop Function`,
                     'markdown'
                 ),
+                new vscode.NotebookCellData(
+                    vscode.NotebookCellKind.Code,
+                    SQL_TEMPLATES.DROP.FUNCTION(item.schema!, item.label, functionInfo.arguments || ''),
+                    'sql'
+                )
             ];
 
             await createAndShowNotebook(cells, metadata);
@@ -153,7 +158,7 @@ ${functionInfo.description ? `<div style="font-size: 12px; background-color: #2b
             // Do not close shared client
         }
     } catch (err: any) {
-        vscode.window.showErrorMessage(`Failed to create function operations notebook: ${err.message} `);
+        await ErrorHandlers.handleCommandError(err, 'create function operations notebook');
     }
 }
 
@@ -190,11 +195,8 @@ export async function cmdEditFunction(item: DatabaseTreeItem, context: vscode.Ex
             const cells = [
                 new vscode.NotebookCellData(
                     vscode.NotebookCellKind.Markup,
-                    `### Edit Function: \`${item.schema}.${item.label}\`
-
-<div style="font-size: 12px; background-color: #2b3a42; border-left: 3px solid #3498db; padding: 6px 10px; margin-bottom: 15px; border-radius: 3px;">
-    <strong>ℹ️ Note:</strong> Modify the function definition below and execute the cell to update the function.
-</div>`,
+                    MarkdownUtils.header(`✏️ Edit Function: \`${item.schema}.${item.label}\``) +
+                    MarkdownUtils.infoBox('Modify the function definition below and execute the cell to update the function.'),
                     'markdown'
                 ),
                 new vscode.NotebookCellData(
@@ -214,7 +216,7 @@ export async function cmdEditFunction(item: DatabaseTreeItem, context: vscode.Ex
             // Do not close shared client
         }
     } catch (err: any) {
-        vscode.window.showErrorMessage(`Failed to create function edit notebook: ${err.message} `);
+        await ErrorHandlers.handleCommandError(err, 'create function edit notebook');
     }
 }
 
@@ -251,18 +253,14 @@ export async function cmdCallFunction(item: DatabaseTreeItem, context: vscode.Ex
             const cells = [
                 new vscode.NotebookCellData(
                     vscode.NotebookCellKind.Markup,
-                    `### Call Function: \`${item.schema}.${item.label}\`
-
-${functionInfo.description ? `<div style="font-size: 12px; background-color: #2b3a42; border-left: 3px solid #3498db; padding: 6px 10px; margin-bottom: 15px; border-radius: 3px;"><strong>ℹ️ Description:</strong> ${functionInfo.description}</div>` : ''}
-
-<table style="font-size: 11px; width: 100%; border-collapse: collapse; margin-bottom: 15px;">
-    <tr><td style="font-weight: bold; width: 100px;">Arguments:</td><td><code>${functionInfo.arguments || 'None'}</code></td></tr>
-    <tr><td style="font-weight: bold;">Returns:</td><td><code>${functionInfo.result_type}</code></td></tr>
-</table>
-
-<div style="font-size: 12px; background-color: #2b3a42; border-left: 3px solid #3498db; padding: 6px 10px; margin-bottom: 15px; border-radius: 3px;">
-    <strong>ℹ️ Note:</strong> Edit the argument values below and execute the cell to call the function.
-</div>`,
+                    MarkdownUtils.header(`📞 Call Function: \`${item.schema}.${item.label}\``) +
+                    (functionInfo.description ? MarkdownUtils.infoBox(`<strong>Description:</strong> ${functionInfo.description}`) : '') +
+                    `\n\n` +
+                    MarkdownUtils.propertiesTable({
+                        'Arguments': functionInfo.arguments ? `<code>${functionInfo.arguments}</code>` : 'None',
+                        'Returns': `<code>${functionInfo.result_type}</code>`
+                    }) +
+                    MarkdownUtils.infoBox('Edit the argument values below and execute the cell to call the function.'),
                     'markdown'
                 ),
                 new vscode.NotebookCellData(
@@ -285,7 +283,7 @@ ${functionInfo.description ? `<div style="font-size: 12px; background-color: #2b
             // Do not close shared client
         }
     } catch (err: any) {
-        vscode.window.showErrorMessage(`Failed to create function call notebook: ${err.message} `);
+        await ErrorHandlers.handleCommandError(err, 'create function call notebook');
     }
 }
 
@@ -321,11 +319,8 @@ export async function cmdDropFunction(item: DatabaseTreeItem, context: vscode.Ex
             const cells = [
                 new vscode.NotebookCellData(
                     vscode.NotebookCellKind.Markup,
-                    `### Drop Function: \`${item.schema}.${item.label}\`
-
-<div style="font-size: 12px; background-color: #3e2d2d; border-left: 3px solid #e74c3c; padding: 6px 10px; margin-bottom: 15px; border-radius: 3px;">
-    <strong>🛑 Caution:</strong> This action will permanently delete the function. This operation cannot be undone.
-</div>`,
+                    MarkdownUtils.header(`❌ Drop Function: \`${item.schema}.${item.label}\``) +
+                    MarkdownUtils.dangerBox('This action will permanently delete the function. This operation cannot be undone.'),
                     'markdown'
                 ),
                 new vscode.NotebookCellData(
@@ -335,7 +330,7 @@ export async function cmdDropFunction(item: DatabaseTreeItem, context: vscode.Ex
                 ),
                 new vscode.NotebookCellData(
                     vscode.NotebookCellKind.Code,
-                    `-- Drop function\nDROP FUNCTION IF EXISTS ${item.schema}.${item.label} (${functionInfo.arguments}); `,
+                    SQL_TEMPLATES.DROP.FUNCTION(item.schema!, item.label, functionInfo.arguments || ''),
                     'sql'
                 )
             ];
@@ -345,7 +340,7 @@ export async function cmdDropFunction(item: DatabaseTreeItem, context: vscode.Ex
             // Do not close shared client
         }
     } catch (err: any) {
-        vscode.window.showErrorMessage(`Failed to create drop function notebook: ${err.message} `);
+        await ErrorHandlers.handleCommandError(err, 'create drop function notebook');
     }
 }
 
@@ -430,14 +425,6 @@ export async function cmdShowFunctionProperties(item: DatabaseTreeItem, context:
             const dependents = dependenciesInfo.rows;
             const metadata = createMetadata(connection, item.databaseName);
 
-            const getKindLabel = (kind: string) => {
-                switch (kind) {
-                    case 'r': return '📊 Table';
-                    case 'v': return '👁️ View';
-                    case 'm': return '💾 Materialized View';
-                    default: return kind;
-                }
-            };
 
             // Parse arguments for display
             const argsList = func.arguments ? func.arguments.split(',').map((arg: string, idx: number) => {
@@ -451,36 +438,29 @@ export async function cmdShowFunctionProperties(item: DatabaseTreeItem, context:
             // Build dependencies table HTML
             const dependencyRows = dependents.map(dep => {
                 return `    <tr>
-        <td>${getKindLabel(dep.kind)}</td>
+        <td>${ObjectUtils.getKindLabel(dep.kind)}</td>
         <td><code>${dep.schema}.${dep.name}</code></td>
     </tr>`;
             }).join('\n');
 
-            const markdown = `### ⚡ Function Properties: \`${item.schema}.${item.label}\`
-
-<div style="font-size: 12px; background-color: #2b3a42; border-left: 3px solid #3498db; padding: 6px 10px; margin-bottom: 15px; border-radius: 3px;">
-    <strong>ℹ️ Owner:</strong> ${func.owner} | <strong>Language:</strong> ${func.language} ${func.comment ? `| <strong>Comment:</strong> ${func.comment}` : ''}
-</div>
-
-#### 📊 General Information
-
-<table style="font-size: 11px; width: 100%; border-collapse: collapse;">
-    <tr><th style="text-align: left; width: 30%;">Property</th><th style="text-align: left;">Value</th></tr>
-    <tr><td><strong>Schema</strong></td><td>${func.schema_name}</td></tr>
-    <tr><td><strong>Function Name</strong></td><td>${func.function_name}</td></tr>
-    <tr><td><strong>Owner</strong></td><td>${func.owner}</td></tr>
-    <tr><td><strong>Language</strong></td><td>${func.language}</td></tr>
-    <tr><td><strong>Return Type</strong></td><td><code>${func.return_type}</code></td></tr>
-    <tr><td><strong>Returns Set</strong></td><td>${func.returns_set ? '✅ Yes' : '🚫 No'}</td></tr>
-    <tr><td><strong>Volatility</strong></td><td>${func.volatility}</td></tr>
-    <tr><td><strong>Parallel Safety</strong></td><td>${func.parallel}</td></tr>
-    <tr><td><strong>Security</strong></td><td>${func.security_definer ? '🔒 SECURITY DEFINER' : '👤 SECURITY INVOKER'}</td></tr>
-    <tr><td><strong>Strict (NULL handling)</strong></td><td>${func.strict ? '✅ Returns NULL on NULL input' : '🚫 Processes NULL inputs'}</td></tr>
-</table>
-
-#### 📥 Arguments${func.arguments ? ' (' + func.arguments.split(',').length + ')' : ' (0)'}
-
-<table style="font-size: 11px; width: 100%; border-collapse: collapse;">
+            const ownerInfo = `${func.owner} | <strong>Language:</strong> ${func.language}${func.comment ? ` | <strong>Comment:</strong> ${func.comment}` : ''}`;
+            const markdown = MarkdownUtils.header(`⚡ Function Properties: \`${item.schema}.${item.label}\``) +
+                MarkdownUtils.infoBox(`<strong>Owner:</strong> ${ownerInfo}`) +
+                `\n\n#### 📊 General Information\n\n` +
+                MarkdownUtils.propertiesTable({
+                    'Schema': func.schema_name,
+                    'Function Name': func.function_name,
+                    'Owner': func.owner,
+                    'Language': func.language,
+                    'Return Type': `<code>${func.return_type}</code>`,
+                    'Returns Set': FormatHelpers.formatBoolean(func.returns_set, 'Yes', 'No'),
+                    'Volatility': func.volatility,
+                    'Parallel Safety': func.parallel,
+                    'Security': func.security_definer ? '🔒 SECURITY DEFINER' : '👤 SECURITY INVOKER',
+                    'Strict (NULL handling)': func.strict ? '✅ Returns NULL on NULL input' : '🚫 Processes NULL inputs'
+                }) +
+                `\n\n#### 📥 Arguments${func.arguments ? ' (' + func.arguments.split(',').length + ')' : ' (0)'}\n\n` +
+                `<table style="font-size: 11px; width: 100%; border-collapse: collapse;">
     <tr>
         <th style="text-align: left; width: 10%;">#</th>
         <th style="text-align: left;">Argument</th>
@@ -488,11 +468,10 @@ export async function cmdShowFunctionProperties(item: DatabaseTreeItem, context:
 ${argsList}
 </table>
 
-${dependents.length > 0 ? `#### 🔄 Dependent Objects (${dependents.length})
+` +
+                (dependents.length > 0 ? `#### 🔄 Dependent Objects (${dependents.length})
 
-<div style="font-size: 11px; background-color: #3a2d42; border-left: 3px solid #e67e22; padding: 6px 10px; margin-bottom: 10px; border-radius: 3px;">
-    Objects that depend on this function:
-</div>
+${MarkdownUtils.infoBox('Objects that depend on this function:', 'Info')}
 
 <table style="font-size: 11px; width: 100%; border-collapse: collapse;">
     <tr>
@@ -502,7 +481,8 @@ ${dependents.length > 0 ? `#### 🔄 Dependent Objects (${dependents.length})
 ${dependencyRows}
 </table>
 
-` : ''}---`;
+` : '') +
+                '---';
 
             const cells = [
                 new vscode.NotebookCellData(vscode.NotebookCellKind.Markup, markdown, 'markdown'),
@@ -542,11 +522,13 @@ ${dependencyRows}
                 ),
                 new vscode.NotebookCellData(
                     vscode.NotebookCellKind.Code,
-                    `-- Drop function (with dependencies)
-DROP FUNCTION IF EXISTS ${item.schema}.${item.label}(${func.arguments}) CASCADE;
+                    `${SQL_TEMPLATES.DROP.FUNCTION(item.schema!, item.label, func.arguments || '')}
+
+-- Drop function (with dependencies)
+-- DROP FUNCTION IF EXISTS ${item.schema}.${item.label}(${func.arguments || ''}) CASCADE;
 
 -- Drop function (without dependencies - will fail if referenced)
--- DROP FUNCTION IF EXISTS ${item.schema}.${item.label}(${func.arguments}) RESTRICT;`,
+-- DROP FUNCTION IF EXISTS ${item.schema}.${item.label}(${func.arguments || ''}) RESTRICT;`,
                     'sql'
                 ),
                 new vscode.NotebookCellData(
@@ -582,7 +564,7 @@ WHERE n.nspname = '${item.schema}' AND p.proname = '${item.label}';`,
             // Do not close shared client
         }
     } catch (err: any) {
-        vscode.window.showErrorMessage(`Failed to show function properties: ${err.message}`);
+        await ErrorHandlers.handleCommandError(err, 'show function properties');
     }
 }
 
@@ -602,40 +584,178 @@ export async function cmdCreateFunction(item: DatabaseTreeItem, context: vscode.
         const connection = await getConnectionWithPassword(item.connectionId!);
         const metadata = createMetadata(connection, item.databaseName);
 
-        const cells = [
-            new vscode.NotebookCellData(
-                vscode.NotebookCellKind.Markup,
-                `### Create New Function in Schema: \`${item.schema}\`
+        const schema = item.schema!;
 
-<div style="font-size: 12px; background-color: #2b3a42; border-left: 3px solid #3498db; padding: 6px 10px; margin-bottom: 15px; border-radius: 3px;">
-    <strong>ℹ️ Note:</strong> Modify the function definition below and execute the cell to create the function.
-</div>`,
-                'markdown'
-            ),
+        const markdown = MarkdownUtils.header(`➕ Create New Function in Schema: \`${schema}\``) +
+            MarkdownUtils.infoBox('This notebook provides templates for creating functions. Modify the templates below and execute to create functions.') +
+            `\n\n#### 📋 Function Design Guidelines\n\n` +
+            MarkdownUtils.operationsTable([
+                { operation: '<strong>Naming</strong>', description: 'Use snake_case for function names (e.g., calculate_total, get_user_by_id)' },
+                { operation: '<strong>Language</strong>', description: 'Choose appropriate language: SQL, PL/pgSQL, PL/Python, etc.' },
+                { operation: '<strong>Volatility</strong>', description: 'Mark as IMMUTABLE, STABLE, or VOLATILE based on behavior' },
+                { operation: '<strong>Security</strong>', description: 'Use SECURITY DEFINER carefully - runs with function owner privileges' },
+                { operation: '<strong>Performance</strong>', description: 'IMMUTABLE functions can be optimized better by query planner' }
+            ]) +
+            `\n\n#### 🏷️ Common Function Patterns\n\n` +
+            MarkdownUtils.propertiesTable({
+                'SQL Function': 'Simple functions written in SQL',
+                'PL/pgSQL Function': 'Procedural language with variables and control flow',
+                'Aggregate Function': 'Functions that operate on sets of rows',
+                'Window Function': 'Functions that operate on window frames',
+                'Trigger Function': 'Functions called automatically by triggers',
+                'Security Function': 'Functions with SECURITY DEFINER for privilege escalation'
+            }) +
+            MarkdownUtils.successBox('Use CREATE OR REPLACE to update existing functions. Functions are schema-scoped objects.') +
+            `\n\n---`;
+
+        const cells = [
+            new vscode.NotebookCellData(vscode.NotebookCellKind.Markup, markdown, 'markdown'),
             new vscode.NotebookCellData(
                 vscode.NotebookCellKind.Markup,
-                `##### 📝 Function Definition`,
+                `##### 📝 Basic SQL Function (Recommended Start)`,
                 'markdown'
             ),
             new vscode.NotebookCellData(
                 vscode.NotebookCellKind.Code,
-                `-- Create new function
-CREATE OR REPLACE FUNCTION ${item.schema}.function_name(param1 integer, param2 text)
+                `-- Create simple SQL function
+CREATE OR REPLACE FUNCTION ${schema}.function_name(param1 integer, param2 text)
 RETURNS text AS $$
+    SELECT 'Result: ' || param2 || ' with value ' || param1::text;
+$$ LANGUAGE sql IMMUTABLE;
+
+-- Add comment
+COMMENT ON FUNCTION ${schema}.function_name(integer, text) IS 'Function description';`,
+                'sql'
+            ),
+            new vscode.NotebookCellData(
+                vscode.NotebookCellKind.Markup,
+                `##### 🔧 PL/pgSQL Function (With Logic)`,
+                'markdown'
+            ),
+            new vscode.NotebookCellData(
+                vscode.NotebookCellKind.Code,
+                `-- Create PL/pgSQL function with variables and control flow
+CREATE OR REPLACE FUNCTION ${schema}.calculate_total(order_id integer)
+RETURNS numeric AS $$
+DECLARE
+    total_amount numeric := 0;
+    item_record record;
 BEGIN
-    -- Function logic here
-    RETURN 'Result: ' || param2;
+    FOR item_record IN 
+        SELECT price, quantity 
+        FROM ${schema}.order_items 
+        WHERE order_id = calculate_total.order_id
+    LOOP
+        total_amount := total_amount + (item_record.price * item_record.quantity);
+    END LOOP;
+    
+    RETURN total_amount;
+END;
+$$ LANGUAGE plpgsql STABLE;`,
+                'sql'
+            ),
+            new vscode.NotebookCellData(
+                vscode.NotebookCellKind.Markup,
+                `##### 🔄 Function Returning Table`,
+                'markdown'
+            ),
+            new vscode.NotebookCellData(
+                vscode.NotebookCellKind.Code,
+                `-- Function that returns a table (set of rows)
+CREATE OR REPLACE FUNCTION ${schema}.get_user_orders(user_id integer)
+RETURNS TABLE (
+    order_id integer,
+    order_date timestamp,
+    total_amount numeric
+) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        o.id,
+        o.created_at,
+        o.total_amount
+    FROM ${schema}.orders o
+    WHERE o.user_id = get_user_orders.user_id
+    ORDER BY o.created_at DESC;
+END;
+$$ LANGUAGE plpgsql STABLE;`,
+                'sql'
+            ),
+            new vscode.NotebookCellData(
+                vscode.NotebookCellKind.Markup,
+                `##### 🔒 Security Definer Function`,
+                'markdown'
+            ),
+            new vscode.NotebookCellData(
+                vscode.NotebookCellKind.Code,
+                `-- Function that runs with owner's privileges (use carefully!)
+CREATE OR REPLACE FUNCTION ${schema}.admin_delete_user(user_id integer)
+RETURNS boolean AS $$
+BEGIN
+    -- This function runs with the privileges of the function owner
+    DELETE FROM ${schema}.users WHERE id = user_id;
+    RETURN FOUND;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Grant execute to specific roles only
+-- GRANT EXECUTE ON FUNCTION ${schema}.admin_delete_user(integer) TO admin_role;`,
+                'sql'
+            ),
+            new vscode.NotebookCellData(
+                vscode.NotebookCellKind.Markup,
+                `##### ⚡ Trigger Function`,
+                'markdown'
+            ),
+            new vscode.NotebookCellData(
+                vscode.NotebookCellKind.Code,
+                `-- Function for triggers (returns trigger type)
+CREATE OR REPLACE FUNCTION ${schema}.update_modified_timestamp()
+RETURNS trigger AS $$
+BEGIN
+    NEW.updated_at := NOW();
+    RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
 
--- Add comment
-COMMENT ON FUNCTION ${item.schema}.function_name(integer, text) IS 'Function description';`,
+-- Create trigger to use this function
+-- CREATE TRIGGER set_updated_at
+--     BEFORE UPDATE ON ${schema}.table_name
+--     FOR EACH ROW
+--     EXECUTE FUNCTION ${schema}.update_modified_timestamp();`,
                 'sql'
+            ),
+            new vscode.NotebookCellData(
+                vscode.NotebookCellKind.Markup,
+                `##### 📊 Aggregate Function`,
+                'markdown'
+            ),
+            new vscode.NotebookCellData(
+                vscode.NotebookCellKind.Code,
+                `-- Custom aggregate function
+CREATE OR REPLACE FUNCTION ${schema}.sum_state(state numeric, value numeric)
+RETURNS numeric AS $$
+BEGIN
+    RETURN COALESCE(state, 0) + COALESCE(value, 0);
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE AGGREGATE ${schema}.safe_sum(numeric) (
+    SFUNC = ${schema}.sum_state,
+    STYPE = numeric,
+    INITCOND = 0
+);`,
+                'sql'
+            ),
+            new vscode.NotebookCellData(
+                vscode.NotebookCellKind.Markup,
+                MarkdownUtils.warningBox('After creating a function, remember to: 1) Test with sample inputs, 2) Grant appropriate EXECUTE permissions, 3) Document parameters and return values, 4) Consider performance implications of volatility settings.'),
+                'markdown'
             )
         ];
 
         await createAndShowNotebook(cells, metadata);
     } catch (err: any) {
-        vscode.window.showErrorMessage(`Failed to create function notebook: ${err.message}`);
+        await ErrorHandlers.handleCommandError(err, 'create function notebook');
     }
 }
