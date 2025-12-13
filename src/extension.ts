@@ -8,6 +8,7 @@ import { showIndexProperties, copyIndexName, generateDropIndexScript, generateRe
 import { cmdAddObjectInDatabase, cmdBackupDatabase, cmdCreateDatabase, cmdDatabaseDashboard, cmdDatabaseOperations, cmdDeleteDatabase, cmdDisconnectDatabase as cmdDisconnectDatabaseLegacy, cmdGenerateCreateScript, cmdMaintenanceDatabase, cmdPsqlTool, cmdQueryTool, cmdRestoreDatabase, cmdScriptAlterDatabase, cmdShowConfiguration } from './commands/database';
 import { cmdDropExtension, cmdEnableExtension, cmdExtensionOperations, cmdRefreshExtension } from './commands/extensions';
 import { cmdCreateForeignTable, cmdEditForeignTable, cmdForeignTableOperations, cmdRefreshForeignTable } from './commands/foreignTables';
+import { cmdForeignDataWrapperOperations, cmdShowForeignDataWrapperProperties, cmdCreateForeignServer, cmdForeignServerOperations, cmdShowForeignServerProperties, cmdDropForeignServer, cmdCreateUserMapping, cmdUserMappingOperations, cmdShowUserMappingProperties, cmdDropUserMapping, cmdRefreshForeignDataWrapper, cmdRefreshForeignServer, cmdRefreshUserMapping } from './commands/foreignDataWrappers';
 import { cmdCallFunction, cmdCreateFunction, cmdDropFunction, cmdEditFunction, cmdFunctionOperations, cmdRefreshFunction, cmdShowFunctionProperties } from './commands/functions';
 import { cmdCreateMaterializedView, cmdDropMatView, cmdEditMatView, cmdMatViewOperations, cmdRefreshMatView, cmdViewMatViewData, cmdViewMatViewProperties } from './commands/materializedViews';
 import { cmdNewNotebook } from './commands/notebook';
@@ -473,6 +474,61 @@ export async function activate(context: vscode.ExtensionContext) {
         {
             command: 'postgres-explorer.createForeignTable',
             callback: async (item: DatabaseTreeItem) => await cmdCreateForeignTable(item, context)
+        },
+        // Foreign Data Wrapper commands
+        {
+            command: 'postgres-explorer.foreignDataWrapperOperations',
+            callback: async (item: DatabaseTreeItem) => await cmdForeignDataWrapperOperations(item, context)
+        },
+        {
+            command: 'postgres-explorer.showForeignDataWrapperProperties',
+            callback: async (item: DatabaseTreeItem) => await cmdShowForeignDataWrapperProperties(item, context)
+        },
+        {
+            command: 'postgres-explorer.refreshForeignDataWrapper',
+            callback: async (item: DatabaseTreeItem) => await cmdRefreshForeignDataWrapper(item, context, databaseTreeProvider)
+        },
+        // Foreign Server commands
+        {
+            command: 'postgres-explorer.createForeignServer',
+            callback: async (item: DatabaseTreeItem) => await cmdCreateForeignServer(item, context)
+        },
+        {
+            command: 'postgres-explorer.foreignServerOperations',
+            callback: async (item: DatabaseTreeItem) => await cmdForeignServerOperations(item, context)
+        },
+        {
+            command: 'postgres-explorer.showForeignServerProperties',
+            callback: async (item: DatabaseTreeItem) => await cmdShowForeignServerProperties(item, context)
+        },
+        {
+            command: 'postgres-explorer.dropForeignServer',
+            callback: async (item: DatabaseTreeItem) => await cmdDropForeignServer(item, context)
+        },
+        {
+            command: 'postgres-explorer.refreshForeignServer',
+            callback: async (item: DatabaseTreeItem) => await cmdRefreshForeignServer(item, context, databaseTreeProvider)
+        },
+        // User Mapping commands
+        {
+            command: 'postgres-explorer.createUserMapping',
+            callback: async (item: DatabaseTreeItem) => await cmdCreateUserMapping(item, context)
+        },
+        {
+            command: 'postgres-explorer.userMappingOperations',
+            callback: async (item: DatabaseTreeItem) => await cmdUserMappingOperations(item, context)
+        },
+        {
+            command: 'postgres-explorer.showUserMappingProperties',
+            callback: async (item: DatabaseTreeItem) => await cmdShowUserMappingProperties(item, context)
+        },
+        {
+            command: 'postgres-explorer.dropUserMapping',
+            callback: async (item: DatabaseTreeItem) => await cmdDropUserMapping(item, context)
+        },
+        {
+            command: 'postgres-explorer.refreshUserMapping',
+            callback: async (item: DatabaseTreeItem) => await cmdRefreshUserMapping(item, context, databaseTreeProvider)
         },
         {
             command: 'postgres-explorer.createRole',

@@ -27,11 +27,12 @@
                     <a href="#" style="text-decoration: none;"
                         onclick="window.scrollTo({top: 0, behavior: 'smooth'}); return false;">
                         &#x1F418; <span class="gradient-text">PgStudio
-                            <span style="font-size: 12px;">Professional Database Management</span>
+                            <span class="logo-subtitle" style="font-size: 12px;">Professional Database Management</span>
                         </span>
                     </a>
                 </div>
-                <button class="mobile-menu-btn" aria-label="Toggle Menu">&#9776;</button>
+                <!-- Mobile Menu Button removed/hidden via CSS as we are simplifying -->
+                <button class="mobile-menu-btn" aria-label="Toggle Menu" style="display: none;">&#9776;</button>
                 <div class="nav-links">
                     <a href="#features">Features</a>
                     <a href="#workflow">Workflow</a>
@@ -39,7 +40,10 @@
                     <a href="https://github.com/dev-asterix/yape">GitHub</a>
                     <button id="theme-toggle" class="theme-toggle" aria-label="Toggle Theme">&#127769;</button>
                     <a href="https://marketplace.visualstudio.com/items?itemName=ric-v.postgres-explorer"
-                        class="nav-cta">Install</a>
+                        class="nav-cta">
+                        <span class="cta-text">Install</span>
+                        <span class="cta-icon">⬇️</span>
+                    </a>
                 </div>
             </nav>
         </div>
@@ -64,8 +68,8 @@
                     class="btn btn-primary">
                     <span class="btn-icon">⬇️</span> Install Now
                 </a>
-                <a href="#features" class="btn btn-secondary">
-                    <span class="btn-icon">✨</span> Explore Features
+                <a href="#guides" class="btn btn-secondary">
+                    <span class="btn-icon">✨</span> Get started
                 </a>
             </div>
 
@@ -355,6 +359,60 @@
         </div>
     </section>
 
+    <!-- Video Guides Section -->
+    <section id="guides" class="section guides-section" style="background-color: var(--bg-secondary);">
+        <div class="container">
+            <h2>Video Guides</h2>
+            <p class="section-subtitle">See PgStudio in action with these step-by-step guides</p>
+
+            <div class="carousel-wrapper">
+                <button class="carousel-btn prev-btn" aria-label="Previous Video">❮</button>
+                <div class="video-carousel">
+                    <div class="video-card carousel-item">
+                        <h3 style="margin-bottom: 1rem; font-size: 1.2rem;">Detailed Setup Guide</h3>
+                        <div class="video-wrapper">
+                            <img src="assets/01-setup.gif" width="100%" alt="PgStudio Setup Guide"
+                                style="border-radius: 8px;" />
+                            <button class="expand-btn" aria-label="Expand Video">⤢</button>
+                        </div>
+                    </div>
+                    <div class="video-card carousel-item">
+                        <h3 style="margin-bottom: 1rem; font-size: 1.2rem;">Database Explorer</h3>
+                        <div class="video-wrapper">
+                            <img src="assets/03-explorer.gif" width="100%" alt="Database Explorer Guide"
+                                style="border-radius: 8px;" />
+                            <button class="expand-btn" aria-label="Expand Video">⤢</button>
+                        </div>
+                    </div>
+                    <div class="video-card carousel-item">
+                        <h3 style="margin-bottom: 1rem; font-size: 1.2rem;">AI Assistant Setup</h3>
+                        <div class="video-wrapper">
+                            <img src="assets/02-ai-assist-setup.gif" width="100%" alt="AI Assistant Setup Guide"
+                                style="border-radius: 8px;" />
+                            <button class="expand-btn" aria-label="Expand Video">⤢</button>
+                        </div>
+                    </div>
+                    <div class="video-card carousel-item">
+                        <h3 style="margin-bottom: 1rem; font-size: 1.2rem;">AI Assistant in Action</h3>
+                        <div class="video-wrapper">
+                            <img src="assets/04-ai-assist.gif" width="100%" alt="AI Assistant in Action"
+                                style="border-radius: 8px;" />
+                            <button class="expand-btn" aria-label="Expand Video">⤢</button>
+                        </div>
+                    </div>
+                </div>
+                <button class="carousel-btn next-btn" aria-label="Next Video">❯</button>
+            </div>
+
+            <div class="carousel-indicators">
+                <span class="indicator active" data-index="0"></span>
+                <span class="indicator" data-index="1"></span>
+                <span class="indicator" data-index="2"></span>
+                <span class="indicator" data-index="3"></span>
+            </div>
+        </div>
+    </section>
+
     <!-- Footer -->
     <footer>
         <div class="container">
@@ -387,6 +445,15 @@
             </div>
         </div>
     </footer>
+
+    <!-- Media Modal -->
+    <div id="video-modal" class="modal">
+        <span class="close-modal">&times;</span>
+        <div class="modal-content">
+            <img style="display: none; width: 100%; border-radius: 8px;" alt="Expanded view" />
+            <video controls width="100%" style="display: none; border-radius: 8px;"></video>
+        </div>
+    </div>
 
     <script src="script.js"></script>
 </body>

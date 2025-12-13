@@ -2327,3 +2327,265 @@ footer {
         padding: 0.5rem 1rem !important;
     }
 }
+
+/* Video Carousel */
+.carousel-wrapper {
+    position: relative;
+    max-width: 900px;
+    margin: 3rem auto 1rem;
+    display: flex;
+    align-items: center;
+}
+
+.video-carousel {
+    display: flex;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    scroll-behavior: smooth;
+    -webkit-overflow-scrolling: touch;
+    gap: 1rem;
+    padding: 1rem 0;
+    scrollbar-width: none;
+    /* Firefox */
+}
+
+.video-carousel::-webkit-scrollbar {
+    display: none;
+    /* Chrome, Safari, Opera */
+}
+
+.carousel-item {
+    flex: 0 0 100%;
+    scroll-snap-align: center;
+    background: var(--bg-primary);
+    border: 1px solid var(--glass-border);
+    border-radius: 12px;
+    padding: 1rem;
+    transition: transform 0.3s ease;
+}
+
+.video-wrapper {
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    aspect-ratio: 16/9;
+}
+
+.video-wrapper video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.carousel-btn {
+    background: rgba(255, 255, 255, 0.05);
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--glass-border);
+    color: var(--text-primary);
+    font-size: 1.2rem;
+    cursor: pointer;
+    width: 48px;
+    /* Fixed size circle */
+    height: 48px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    z-index: 10;
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.carousel-btn:hover {
+    background: rgba(0, 212, 255, 0.1);
+    border-color: var(--accent-cyan);
+    color: var(--accent-cyan);
+    box-shadow: 0 0 20px rgba(0, 212, 255, 0.3);
+    transform: translateY(-50%) scale(1.1);
+}
+
+.prev-btn {
+    left: -20px;
+    /* Overlap slightly */
+}
+
+.next-btn {
+    right: -20px;
+    /* Overlap slightly */
+}
+
+@media (max-width: 900px) {
+    .prev-btn {
+        left: 10px;
+        background: rgba(0, 0, 0, 0.5);
+    }
+
+    .next-btn {
+        right: 10px;
+        background: rgba(0, 0, 0, 0.5);
+    }
+
+    .carousel-btn {
+        display: flex;
+    }
+
+    /* Show on mobile but overlay */
+}
+
+.carousel-indicators {
+    display: flex;
+    justify-content: center;
+    gap: 0.5rem;
+    margin-top: 1rem;
+}
+
+.indicator {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--glass-border);
+    cursor: pointer;
+    transition: all 0.3s;
+}
+
+.indicator.active {
+    background: var(--accent-cyan);
+    transform: scale(1.2);
+}
+
+/* Video Expand Button */
+.video-wrapper {
+    position: relative;
+}
+
+.expand-btn {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background: rgba(0, 0, 0, 0.6);
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    width: 32px;
+    height: 32px;
+    font-size: 1.2rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.3s ease, background 0.3s ease;
+}
+
+.video-wrapper:hover .expand-btn {
+    opacity: 1;
+}
+
+.expand-btn:hover {
+    background: var(--accent-cyan);
+}
+
+/* Video Modal */
+.modal {
+    display: none;
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    overflow: auto;
+    background-color: rgba(0, 0, 0, 0.9);
+    backdrop-filter: blur(5px);
+    align-items: center;
+    justify-content: center;
+    align-items: center;
+    justify-content: center;
+    opacity: 1;
+    transition: opacity 0.3s ease;
+}
+
+.modal-content {
+    position: relative;
+    max-width: 90%;
+    max-height: 90%;
+    width: auto;
+    height: auto;
+    display: flex;
+    justify-content: center;
+}
+
+.close-modal {
+    position: absolute;
+    top: 15px;
+    right: 35px;
+    color: #f1f1f1;
+    font-size: 40px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: color 0.3s;
+    z-index: 1001;
+}
+
+.close-modal:hover,
+.close-modal:focus {
+    color: var(--accent-cyan);
+    text-decoration: none;
+    cursor: pointer;
+}
+
+/* Optimized Mobile Topbar */
+.cta-icon {
+    display: none;
+    font-size: 1.2rem;
+}
+
+@media (max-width: 768px) {
+
+    /* Hide Logo Subtitle */
+    .logo-subtitle {
+        display: none;
+    }
+
+    /* Hide Navigation Links except CTA */
+    .nav-links a:not(.nav-cta) {
+        display: none;
+    }
+
+    /* Keep Nav Links container visible (override potential mobile menu logic) */
+    .nav-links {
+        display: flex;
+        gap: 1rem;
+    }
+
+    /* Optimize Install Button */
+    .nav-cta {
+        padding: 0.4rem 0.6rem !important;
+        font-size: 0 !important;
+        /* Hide text */
+    }
+
+    .cta-text {
+        display: none;
+    }
+
+    .cta-icon {
+        display: inline-block;
+        font-size: 1.2rem;
+    }
+
+    /* Hide Hamburger (if not already hidden by inline style) */
+    .mobile-menu-btn {
+        display: none !important;
+    }
+
+    /* Adjust logo size */
+    .logo {
+        font-size: 1.2rem;
+    }
+}

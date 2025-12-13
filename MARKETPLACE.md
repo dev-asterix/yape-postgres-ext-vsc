@@ -12,21 +12,19 @@
 
 ## 📸 Screenshots
 
-### 📊 Real-Time Database Dashboard
-![Dashboard](resources/screenshots/pg-exp-dash.png)
-*Monitor connections, queries, and performance metrics in real-time*
+### 🎥 Video Guides
 
-### 🔗 Connection Management
-![Connection Management](resources/screenshots/pg-exp-connection.png)
-*Manage multiple database connections with an intuitive interface*
+#### 1. Quick Setup
+![PgStudio Setup](docs/assets/01-setup.gif)
 
-### 📓 Interactive SQL Notebooks
-![SQL Notebooks](resources/screenshots/pg-exp-view.png)
-*Write and execute queries with rich output formatting*
+#### 2. Database Explorer
+![Database Explorer](docs/assets/03-explorer.gif)
 
-### 🛠️ Object Creation
-![Object Creation](resources/screenshots/pg-exp-create.png)
-*Create database objects with intelligent templates*
+#### 3. AI Assistant Configuration
+![AI Assistant Setup](docs/assets/02-ai-assist-setup.gif)
+
+#### 4. AI Assistant In-Action
+![AI Assistant Usage](docs/assets/04-ai-assist.gif)
 
 ---
 

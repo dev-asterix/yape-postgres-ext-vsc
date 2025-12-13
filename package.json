@@ -1,7 +1,7 @@
 {
   "name": "postgres-explorer",
   "displayName": "PostgreSQL Explorer",
-  "version": "0.5.3",
+  "version": "0.6.0",
   "description": "PostgreSQL database explorer for VS Code with notebook support",
   "publisher": "ric-v",
   "private": false,
@@ -284,6 +284,66 @@
         "command": "postgres-explorer.createForeignTable",
         "title": "Create Foreign Table",
         "icon": "$(add)"
+      },
+      {
+        "command": "postgres-explorer.foreignDataWrapperOperations",
+        "title": "FDW Operations"
+      },
+      {
+        "command": "postgres-explorer.showForeignDataWrapperProperties",
+        "title": "Show FDW Properties",
+        "icon": "$(info)"
+      },
+      {
+        "command": "postgres-explorer.refreshForeignDataWrapper",
+        "title": "Refresh FDW",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "postgres-explorer.createForeignServer",
+        "title": "Create Foreign Server",
+        "icon": "$(add)"
+      },
+      {
+        "command": "postgres-explorer.foreignServerOperations",
+        "title": "Server Operations"
+      },
+      {
+        "command": "postgres-explorer.showForeignServerProperties",
+        "title": "Show Server Properties",
+        "icon": "$(info)"
+      },
+      {
+        "command": "postgres-explorer.dropForeignServer",
+        "title": "Drop Foreign Server"
+      },
+      {
+        "command": "postgres-explorer.refreshForeignServer",
+        "title": "Refresh Server",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "postgres-explorer.createUserMapping",
+        "title": "Create User Mapping",
+        "icon": "$(add)"
+      },
+      {
+        "command": "postgres-explorer.userMappingOperations",
+        "title": "User Mapping Operations"
+      },
+      {
+        "command": "postgres-explorer.showUserMappingProperties",
+        "title": "Show User Mapping Properties",
+        "icon": "$(info)"
+      },
+      {
+        "command": "postgres-explorer.dropUserMapping",
+        "title": "Drop User Mapping"
+      },
+      {
+        "command": "postgres-explorer.refreshUserMapping",
+        "title": "Refresh User Mapping",
+        "icon": "$(refresh)"
       },
       {
         "command": "postgres-explorer.createRole",
@@ -1094,6 +1154,56 @@
           "command": "postgres-explorer.createForeignTable",
           "when": "view == postgresExplorer && viewItem == category-foreign-tables",
           "group": "inline"
+        },
+        {
+          "command": "postgres-explorer.createForeignServer",
+          "when": "view == postgresExplorer && viewItem == category-foreign-data-wrappers",
+          "group": "inline"
+        },
+        {
+          "command": "postgres-explorer.foreignDataWrapperOperations",
+          "when": "view == postgresExplorer && viewItem == foreign-data-wrapper",
+          "group": "1_operations@0"
+        },
+        {
+          "command": "postgres-explorer.showForeignDataWrapperProperties",
+          "when": "view == postgresExplorer && viewItem == foreign-data-wrapper",
+          "group": "inline@1"
+        },
+        {
+          "command": "postgres-explorer.foreignServerOperations",
+          "when": "view == postgresExplorer && viewItem == foreign-server",
+          "group": "1_operations@0"
+        },
+        {
+          "command": "postgres-explorer.showForeignServerProperties",
+          "when": "view == postgresExplorer && viewItem == foreign-server",
+          "group": "inline@1"
+        },
+        {
+          "command": "postgres-explorer.createUserMapping",
+          "when": "view == postgresExplorer && viewItem == foreign-server",
+          "group": "1_operations@1"
+        },
+        {
+          "command": "postgres-explorer.dropForeignServer",
+          "when": "view == postgresExplorer && viewItem == foreign-server",
+          "group": "9_delete"
+        },
+        {
+          "command": "postgres-explorer.userMappingOperations",
+          "when": "view == postgresExplorer && viewItem == user-mapping",
+          "group": "1_operations@0"
+        },
+        {
+          "command": "postgres-explorer.showUserMappingProperties",
+          "when": "view == postgresExplorer && viewItem == user-mapping",
+          "group": "inline@1"
+        },
+        {
+          "command": "postgres-explorer.dropUserMapping",
+          "when": "view == postgresExplorer && viewItem == user-mapping",
+          "group": "9_delete"
         },
         {
           "command": "postgres-explorer.addColumn",

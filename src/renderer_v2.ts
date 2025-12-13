@@ -1436,7 +1436,7 @@ export const activate: ActivationFunction = context => {
                         return {
                             label: col,
                             data: chartData.map(row => parseFloat(row[col]) || 0),
-                            backgroundColor: ctx ? createGradient(ctx, colorIdx, customColor) : bgColor,
+                            backgroundColor: ctx ? createGradient(ctx, colorIdx, customColor, !horizontalBars) : bgColor,
                             borderColor: border,
                             borderWidth: 2,
                             borderRadius: 6,
@@ -1537,7 +1537,7 @@ export const activate: ActivationFunction = context => {
                         return {
                             label: col,
                             data: chartData.map(row => parseFloat(row[col]) || 0),
-                            backgroundColor: ctx ? createGradient(ctx, colorIdx, customColor) : bgColor,
+                            backgroundColor: ctx ? createGradient(ctx, colorIdx, customColor, !horizontalBars) : bgColor,
                             borderColor: border,
                             borderWidth: 1,
                             borderRadius: 4,

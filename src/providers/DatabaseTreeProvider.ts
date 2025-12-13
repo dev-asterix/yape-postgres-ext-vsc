@@ -127,7 +127,8 @@ export class DatabaseTreeProvider implements vscode.TreeDataProvider<DatabaseTre
                     // Return just the categories at database level
                     return [
                         new DatabaseTreeItem('Schemas', vscode.TreeItemCollapsibleState.Collapsed, 'category', element.connectionId, element.databaseName),
-                        new DatabaseTreeItem('Extensions', vscode.TreeItemCollapsibleState.Collapsed, 'category', element.connectionId, element.databaseName)
+                        new DatabaseTreeItem('Extensions', vscode.TreeItemCollapsibleState.Collapsed, 'category', element.connectionId, element.databaseName),
+                        new DatabaseTreeItem('Foreign Data Wrappers', vscode.TreeItemCollapsibleState.Collapsed, 'category', element.connectionId, element.databaseName)
                     ];
 
                 case 'category':
@@ -372,6 +373,20 @@ export class DatabaseTreeProvider implements vscode.TreeDataProvider<DatabaseTre
                                 element.databaseName,
                                 element.schema
                             ));
+
+                        case 'Foreign Data Wrappers':
+                            const fdwResult = await client.query(
+                                `SELECT fdwname as name
+                                 FROM pg_foreign_data_wrapper
+                                 ORDER BY fdwname`
+                            );
+                            return fdwResult.rows.map(row => new DatabaseTreeItem(
+                                row.name,
+                                vscode.TreeItemCollapsibleState.Collapsed,
+                                'foreign-data-wrapper',
+                                element.connectionId,
+                                element.databaseName
+                            ));
                     }
                     return [];
 
@@ -399,6 +414,44 @@ export class DatabaseTreeProvider implements vscode.TreeDataProvider<DatabaseTre
                         new DatabaseTreeItem('Columns', vscode.TreeItemCollapsibleState.Collapsed, 'category', element.connectionId, element.databaseName, element.schema, element.label)
                     ];
 
+                case 'foreign-data-wrapper':
+                    // FDW node - list all foreign servers using this FDW
+                    const serversResult = await client.query(
+                        `SELECT srv.srvname as name
+                         FROM pg_foreign_server srv
+                         JOIN pg_foreign_data_wrapper fdw ON srv.srvfdw = fdw.oid
+                         WHERE fdw.fdwname = $1
+                         ORDER BY srv.srvname`,
+                        [element.label]
+                    );
+                    return serversResult.rows.map(row => new DatabaseTreeItem(
+                        row.name,
+                        vscode.TreeItemCollapsibleState.Collapsed,
+                        'foreign-server',
+                        element.connectionId,
+                        element.databaseName,
+                        element.label // Store FDW name in schema field
+                    ));
+
+                case 'foreign-server':
+                    // Foreign server node - list all user mappings
+                    const mappingsResult = await client.query(
+                        `SELECT um.usename as name
+                         FROM pg_user_mappings um
+                         WHERE um.srvname = $1
+                         ORDER BY um.usename`,
+                        [element.label]
+                    );
+                    return mappingsResult.rows.map(row => new DatabaseTreeItem(
+                        row.name,
+                        vscode.TreeItemCollapsibleState.None,
+                        'user-mapping',
+                        element.connectionId,
+                        element.databaseName,
+                        element.label, // Store server name in schema field
+                        element.label  // Store server name in tableName for context
+                    ));
+
                 default:
                     return [];
             }
@@ -425,7 +478,7 @@ export class DatabaseTreeItem extends vscode.TreeItem {
     constructor(
         public readonly label: string,
         public readonly collapsibleState: vscode.TreeItemCollapsibleState,
-        public readonly type: 'connection' | 'database' | 'schema' | 'table' | 'view' | 'function' | 'column' | 'category' | 'materialized-view' | 'type' | 'foreign-table' | 'extension' | 'role' | 'databases-group' | 'constraint' | 'index',
+        public readonly type: 'connection' | 'database' | 'schema' | 'table' | 'view' | 'function' | 'column' | 'category' | 'materialized-view' | 'type' | 'foreign-table' | 'extension' | 'role' | 'databases-group' | 'constraint' | 'index' | 'foreign-data-wrapper' | 'foreign-server' | 'user-mapping',
         public readonly connectionId?: string,
         public readonly databaseName?: string,
         public readonly schema?: string,
@@ -465,7 +518,10 @@ export class DatabaseTreeItem extends vscode.TreeItem {
             extension: new vscode.ThemeIcon(isInstalled ? 'extensions-installed' : 'extensions', isInstalled ? new vscode.ThemeColor('charts.green') : undefined),
             role: new vscode.ThemeIcon('person', new vscode.ThemeColor('charts.yellow')),
             constraint: new vscode.ThemeIcon('lock', new vscode.ThemeColor('charts.orange')),
-            index: new vscode.ThemeIcon('search', new vscode.ThemeColor('charts.purple'))
+            index: new vscode.ThemeIcon('search', new vscode.ThemeColor('charts.purple')),
+            'foreign-data-wrapper': new vscode.ThemeIcon('extensions', new vscode.ThemeColor('charts.blue')),
+            'foreign-server': new vscode.ThemeIcon('server', new vscode.ThemeColor('charts.green')),
+            'user-mapping': new vscode.ThemeIcon('account', new vscode.ThemeColor('charts.yellow'))
         }[type];
     }
 
