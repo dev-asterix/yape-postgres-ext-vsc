@@ -54,8 +54,18 @@ export class ConnectionManagementPanel {
 
                     case 'edit':
                         // Open the connection form with pre-filled data
-                        vscode.window.showInformationMessage('Edit functionality will open the connection form');
-                        // TODO: Implement edit by opening ConnectionFormPanel with existing data
+                        {
+                            const config = vscode.workspace.getConfiguration();
+                            const connections = config.get<ConnectionInfo[]>('postgresExplorer.connections') || [];
+                            const connectionToEdit = connections.find(c => c.id === message.id);
+
+                            if (connectionToEdit) {
+                                ConnectionManagementPanel.currentPanel?._panel.dispose(); // Close management panel
+                                vscode.commands.executeCommand('postgres-explorer.addConnection', connectionToEdit);
+                            } else {
+                                vscode.window.showErrorMessage(`Connection not found: ${message.id}`);
+                            }
+                        }
                         break;
 
                     case 'test':

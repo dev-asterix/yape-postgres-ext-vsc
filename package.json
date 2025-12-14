@@ -1,7 +1,7 @@
 {
   "name": "postgres-explorer",
   "displayName": "PgStudio (PostgreSQL Explorer)",
-  "version": "0.6.6",
+  "version": "0.6.7",
   "description": "PostgreSQL database explorer for VS Code with notebook support",
   "publisher": "ric-v",
   "private": false,
@@ -1593,7 +1593,7 @@
   "main": "./dist/extension.js",
   "scripts": {
     "vscode:prepublish": "npm run esbuild-base --minify && npm run esbuild-renderer --minify",
-    "esbuild-base": "esbuild ./src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node",
+    "esbuild-base": "esbuild ./src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --external:ssh2 --format=cjs --platform=node",
     "esbuild-renderer": "esbuild ./src/renderer_v2.ts --bundle --outfile=dist/renderer_v2.js --format=esm --platform=browser",
     "compile": "tsc -p ./ && npm run esbuild-renderer",
     "watch": "tsc -watch -p ./",
@@ -1605,7 +1605,8 @@
   "dependencies": {
     "chart.js": "^4.5.1",
     "esbuild": ">=0.25.0",
-    "pg": "^8.11.3"
+    "pg": "^8.11.3",
+    "ssh2": "^1.15.0"
   },
   "devDependencies": {
     "@types/chai": "^5.2.3",
@@ -1613,6 +1614,7 @@
     "@types/module-alias": "^2.0.4",
     "@types/node": "^16.18.126",
     "@types/pg": "^8.11.11",
+    "@types/ssh2": "^1.15.0",
     "@types/sinon": "^21.0.0",
     "@types/vscode": "^1.80.0",
     "@types/vscode-notebook-renderer": "^1.72.4",
