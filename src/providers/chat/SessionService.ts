@@ -2,6 +2,7 @@
  * Session storage service for chat history
  */
 import * as vscode from 'vscode';
+import * as crypto from 'crypto';
 import { ChatSession, ChatSessionSummary, ChatMessage } from './types';
 
 export class SessionService {
@@ -21,7 +22,9 @@ export class SessionService {
     }
 
     generateSessionId(): string {
-        return `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        // Use 9 random bytes as before: base64url-encoding to avoid special chars (or hex for simplicity)
+        const randomPart = crypto.randomBytes(9).toString('base64').replace(/[+/=]/g, '').substr(0, 12);
+        return `session_${Date.now()}_${randomPart}`;
     }
 
     getCurrentSessionId(): string | null {
