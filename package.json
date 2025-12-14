@@ -1,7 +1,7 @@
 {
-  "name": "postgres-explorer",
-  "displayName": "PgStudio (previously PostgreSQL Explorer)",
-  "version": "0.6.3",
+  "name": "pgstudio",
+  "displayName": "[DEPRECATED] PgStudio (previously PostgreSQL Explorer)",
+  "version": "0.6.5",
   "description": "PostgreSQL database explorer for VS Code with notebook support",
   "publisher": "ric-v",
   "private": false,
