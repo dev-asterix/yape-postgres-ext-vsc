@@ -1914,7 +1914,7 @@ export const activate: ActivationFunction = context => {
                             // Format as PostgreSQL array literal: '{1,2,3}'
                             const arrayStr = val.map(v => {
                                 if (v === null) return 'NULL';
-                                if (typeof v === 'string') return `"${v.replace(/"/g, '\\"')}"`;
+                                if (typeof v === 'string') return `"${v.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
                                 return String(v);
                             }).join(',');
                             return `'{${arrayStr}}'`;
@@ -1927,7 +1927,7 @@ export const activate: ActivationFunction = context => {
                                     const arr = JSON.parse(val);
                                     const arrayStr = arr.map((v: any) => {
                                         if (v === null) return 'NULL';
-                                        if (typeof v === 'string') return `"${v.replace(/"/g, '\\"')}"`;
+                                        if (typeof v === 'string') return `"${v.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
                                         return String(v);
                                     }).join(',');
                                     return `'{${arrayStr}}'`;
@@ -1957,7 +1957,7 @@ export const activate: ActivationFunction = context => {
                 if (Array.isArray(val)) {
                     const arrayStr = val.map(v => {
                         if (v === null) return 'NULL';
-                        if (typeof v === 'string') return `"${v.replace(/"/g, '\\"')}"`;
+                        if (typeof v === 'string') return `"${v.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
                         return String(v);
                     }).join(',');
                     return `'{${arrayStr}}'`;

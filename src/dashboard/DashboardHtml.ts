@@ -292,6 +292,32 @@ export function getHtmlForWebview(stats: DashboardStats) {
                 z-index: 100;
                 overflow-y: auto;
             }
+            /* Media Queries */
+            @media (max-width: 768px) {
+                body {
+                    padding: 24px;
+                }
+                .header {
+                    flex-direction: column;
+                    gap: 16px;
+                }
+                .header-controls {
+                    width: 100%;
+                    justify-content: flex-start;
+                }
+                .grid {
+                    gap: 16px;
+                    margin-bottom: 32px;
+                }
+                .charts-grid {
+                    grid-template-columns: 1fr;
+                    gap: 24px;
+                }
+                .chart-container {
+                    padding: 16px;
+                    height: 300px;
+                }
+            }
             .back-link {
                 color: var(--secondary-text);
                 cursor: pointer;

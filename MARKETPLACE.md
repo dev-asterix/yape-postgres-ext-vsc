@@ -35,8 +35,9 @@
 | 🔌 **Secure Connections** | Manage multiple connections with VS Code SecretStorage encryption |
 | 📊 **Live Dashboard** | Real-time metrics, active query monitoring, and performance graphs |
 | 📓 **SQL Notebooks** | Interactive notebooks with rich output, AI assistance, and export options |
-| 🌳 **Database Explorer** | Browse tables, views, functions, types, extensions, and roles |
+| 🌳 **Database Explorer** | Browse tables, views, functions, types, extensions, roles, and FDWs |
 | 🛠️ **Object Operations** | Full CRUD operations, scripts, VACUUM, ANALYZE, REINDEX |
+| 🌍 **Foreign Data Wrappers** | Manage foreign servers, user mappings, and tables |
 | 🤖 **AI-Powered** | GitHub Copilot, OpenAI, Anthropic, and Google Gemini integration |
 | ⌨️ **Developer Tools** | IntelliSense, keyboard shortcuts, PSQL terminal access |
 | 📤 **Export Data** | Export query results to CSV, JSON, or Excel formats |
@@ -103,7 +104,7 @@ Navigate your database with an intuitive hierarchical tree view:
         ├── 🔄 Materialized Views
         ├── ⚙️ Functions
         ├── 🏷️ Types
-        ├── 🔗 Foreign Tables
+        ├── 🌍 Foreign Data Wrappers
         ├── 🧩 Extensions
         └── 👥 Roles
 ```
@@ -176,6 +177,7 @@ code --install-extension ric-v.postgres-explorer
 | 🔄 **Materialized Views** | Refresh, View Data, Edit, Drop |
 | ⚙️ **Functions** | View, Edit, Call with Parameters, Drop |
 | 🏷️ **Types** | View Properties, Edit, Drop |
+| 🌍 **Foreign Data Wrappers** | Create/Drop Server, User Mappings, Import Schema |
 | 🔗 **Foreign Tables** | View, Edit, Drop |
 | 🧩 **Extensions** | Enable, Disable, Drop |
 | 👥 **Roles** | Grant/Revoke Permissions, Edit, Drop |

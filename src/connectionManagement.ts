@@ -54,8 +54,18 @@ export class ConnectionManagementPanel {
 
                     case 'edit':
                         // Open the connection form with pre-filled data
-                        vscode.window.showInformationMessage('Edit functionality will open the connection form');
-                        // TODO: Implement edit by opening ConnectionFormPanel with existing data
+                        {
+                            const config = vscode.workspace.getConfiguration();
+                            const connections = config.get<ConnectionInfo[]>('postgresExplorer.connections') || [];
+                            const connectionToEdit = connections.find(c => c.id === message.id);
+
+                            if (connectionToEdit) {
+                                ConnectionManagementPanel.currentPanel?._panel.dispose(); // Close management panel
+                                vscode.commands.executeCommand('postgres-explorer.addConnection', connectionToEdit);
+                            } else {
+                                vscode.window.showErrorMessage(`Connection not found: ${message.id}`);
+                            }
+                        }
                         break;
 
                     case 'test':
@@ -165,6 +175,7 @@ export class ConnectionManagementPanel {
                     --text-color: var(--vscode-editor-foreground);
                     --card-bg: var(--vscode-editor-background);
                     --border-color: var(--vscode-widget-border);
+                    --focus-border: var(--vscode-focusBorder);
                     --accent-color: var(--vscode-textLink-foreground);
                     --hover-bg: var(--vscode-list-hoverBackground);
                     --danger-color: var(--vscode-errorForeground);
@@ -173,15 +184,10 @@ export class ConnectionManagementPanel {
                     --font-family: var(--vscode-font-family);
                     --shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
                     --shadow-hover: 0 8px 24px rgba(0, 0, 0, 0.08);
-                    --card-radius: 12px;
-                    --card-border: 1px solid var(--border-color);
+                    --card-radius: 6px;
                 }
 
-                * {
-                    margin: 0;
-                    padding: 0;
-                    box-sizing: border-box;
-                }
+                * { margin: 0; padding: 0; box-sizing: border-box; }
 
                 body {
                     background-color: var(--bg-color);
@@ -212,227 +218,135 @@ export class ConnectionManagementPanel {
                     width: 56px;
                     height: 56px;
                     margin: 0 auto 16px;
-                    background: linear-gradient(135deg, #336791 0%, #4a7ba7 100%);
+                    background: var(--hover-bg);
                     border-radius: 14px;
                     display: flex;
                     align-items: center;
                     justify-content: center;
-                    box-shadow: 0 4px 12px rgba(51, 103, 145, 0.2);
+                    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
                 }
 
                 .header-icon img {
                     width: 32px;
                     height: 32px;
-                    filter: brightness(0) invert(1);
                 }
 
                 .header h1 {
                     font-size: 28px;
                     font-weight: 600;
-                    letter-spacing: -0.5px;
                     margin-bottom: 8px;
                 }
 
                 .header p {
                     color: var(--secondary-text);
                     font-size: 14px;
-                    margin-bottom: 24px;
-                }
-
-                .header-actions {
-                    text-align: center;
                 }
 
                 .btn-primary {
                     background: var(--vscode-button-background);
                     color: var(--vscode-button-foreground);
                     border: none;
-                    padding: 11px 24px;
-                    border-radius: 7px;
-                    font-size: 14px;
-                    font-weight: 500;
+                    padding: 8px 16px;
+                    border-radius: 4px;
+                    font-family: var(--font-family);
+                    font-size: 13px;
                     cursor: pointer;
-                    transition: all 0.2s ease;
                     display: inline-flex;
                     align-items: center;
                     gap: 8px;
-                    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+                    text-decoration: none;
+                    margin-top: 20px;
                 }
 
                 .btn-primary:hover {
                     background: var(--vscode-button-hoverBackground);
-                    transform: translateY(-1px);
-                    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-                }
-
-                .btn-primary:active {
-                    transform: scale(0.98);
-                }
-
-                .btn-icon {
-                    font-size: 16px;
-                    line-height: 1;
                 }
 
                 .connections-grid {
                     display: grid;
-                    grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+                    grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
                     gap: 20px;
-                    margin-top: 24px;
                 }
 
                 .connection-card {
-                    background: var(--card-bg);
-                    border: var(--card-border);
+                    background-color: var(--card-bg);
+                    border: 1px solid var(--border-color);
                     border-radius: var(--card-radius);
-                    padding: 24px;
-                    box-shadow: var(--shadow);
-                    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+                    padding: 16px;
+                    display: flex;
+                    flex-direction: column;
+                    gap: 16px;
+                    transition: border-color 0.2s, box-shadow 0.2s;
                     position: relative;
-                    overflow: hidden;
-                }
-
-                .connection-card::before {
-                    content: '';
-                    position: absolute;
-                    top: 0;
-                    left: 0;
-                    right: 0;
-                    height: 3px;
-                    background: linear-gradient(90deg, var(--accent-color), transparent);
-                    opacity: 0.6;
                 }
 
                 .connection-card:hover {
-                    transform: translateY(-4px);
-                    box-shadow: var(--shadow-hover);
-                    border-color: var(--accent-color);
+                    border-color: var(--focus-border);
+                    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
                 }
 
                 .card-header {
                     display: flex;
                     justify-content: space-between;
                     align-items: flex-start;
-                    margin-bottom: 20px;
                 }
 
                 .card-title {
-                    font-size: 18px;
+                    font-size: 16px;
                     font-weight: 600;
-                    margin-bottom: 6px;
                     display: flex;
                     align-items: center;
                     gap: 8px;
                 }
 
-                .card-icon {
-                    font-size: 20px;
-                }
-
-                .card-status {
+                .status-badges {
                     display: flex;
                     gap: 6px;
-                    align-items: center;
-                    flex-wrap: wrap;
+                    font-size: 11px;
                 }
 
                 .status-badge {
-                    padding: 5px 12px;
-                    border-radius: 12px;
-                    font-size: 11px;
-                    font-weight: 500;
-                    text-transform: uppercase;
-                    letter-spacing: 0.5px;
-                }
-
-                .status-badge.has-auth {
-                    background: rgba(34, 197, 94, 0.15);
-                    color: var(--success-color);
-                    border: 1px solid var(--success-color);
-                }
-
-                .live-indicator {
-                    display: flex;
-                    align-items: center;
-                    gap: 6px;
-                    padding: 4px 10px;
-                    background: rgba(34, 197, 94, 0.1);
-                    border: 1px solid rgba(34, 197, 94, 0.3);
-                    border-radius: 12px;
-                    font-size: 11px;
-                    font-weight: 600;
-                    color: #22c55e;
-                    text-transform: uppercase;
-                    letter-spacing: 0.5px;
-                }
-
-                .live-dot {
-                    width: 8px;
-                    height: 8px;
-                    background: #22c55e;
-                    border-radius: 50%;
-                    animation: pulse 2s ease-in-out infinite;
-                    box-shadow: 0 0 8px rgba(34, 197, 94, 0.6);
-                }
-
-                @keyframes pulse {
-                    0%, 100% {
-                        opacity: 1;
-                        transform: scale(1);
-                    }
-                    50% {
-                        opacity: 0.4;
-                        transform: scale(0.8);
-                    }
-                }
-
-                .status-badge.no-auth {
-                    background: rgba(128, 128, 128, 0.15);
+                    padding: 2px 8px;
+                    border-radius: 10px;
+                    border: 1px solid var(--border-color);
+                    background-color: var(--hover-bg);
                     color: var(--secondary-text);
-                    border: 1px solid var(--secondary-text);
+                }
+
+                .status-badge.live {
+                    background-color: var(--success-color);
+                    color: #fff;
+                    border-color: transparent;
+                }
+                
+                .status-badge.has-auth {
+                    color: var(--success-color);
+                    border-color: var(--success-color);
                 }
 
                 .card-details {
-                    margin-bottom: 16px;
+                    display: flex;
+                    flex-direction: column;
+                    gap: 8px;
                 }
 
                 .detail-row {
                     display: flex;
-                    margin-bottom: 10px;
                     font-size: 13px;
                     align-items: center;
-                    gap: 8px;
-                }
-
-                .detail-icon {
-                    font-size: 14px;
-                    width: 20px;
-                    opacity: 0.7;
                 }
 
                 .detail-label {
                     color: var(--secondary-text);
-                    min-width: 70px;
-                    font-weight: 500;
+                    width: 80px;
+                    flex-shrink: 0;
                 }
 
                 .detail-value {
-                    color: var(--text-color);
                     font-family: 'Courier New', monospace;
-                    word-break: break-all;
-                    flex: 1;
-                }
-
-                .connection-string {
-                    background: rgba(96, 165, 250, 0.08);
-                    border: 1px solid rgba(96, 165, 250, 0.2);
-                    border-radius: 6px;
-                    padding: 10px 12px;
-                    margin-bottom: 16px;
-                    font-family: 'Courier New', monospace;
-                    font-size: 11px;
-                    word-break: break-all;
-                    color: var(--text-color);
+                    white-space: nowrap;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
                 }
 
                 .card-actions {
@@ -444,215 +358,91 @@ export class ConnectionManagementPanel {
 
                 .btn {
                     flex: 1;
-                    padding: 9px 16px;
-                    border-radius: 6px;
-                    font-size: 13px;
-                    font-weight: 500;
+                    padding: 6px 12px;
+                    border-radius: 4px;
                     cursor: pointer;
-                    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-                    border: none;
+                    font-family: var(--font-family);
+                    font-size: 12px;
+                    border: 1px solid transparent;
                     display: flex;
                     align-items: center;
                     justify-content: center;
                     gap: 6px;
+                    background: transparent;
+                    color: var(--text-color);
+                    border: 1px solid var(--border-color);
                 }
 
-                .btn:active {
-                    transform: scale(0.97);
-                }
-
-                .btn-test {
-                    background: #4875b3;
-                    color: #ffffff;
-                    box-shadow: 0 2px 6px rgba(72, 117, 179, 0.3);
-                }
-
-                .btn-test:hover {
-                    background: #5989c7;
-                    transform: translateY(-1px);
-                    box-shadow: 0 4px 10px rgba(72, 117, 179, 0.4);
+                .btn:hover {
+                    background-color: var(--hover-bg);
                 }
 
                 .btn-delete {
-                    background: #d16969;
-                    color: #ffffff;
-                    box-shadow: 0 2px 6px rgba(209, 105, 105, 0.3);
+                    color: var(--danger-color);
+                    border-color: var(--danger-color);
                 }
-
+                
                 .btn-delete:hover {
-                    background: #e07a7a;
-                    transform: translateY(-1px);
-                    box-shadow: 0 4px 10px rgba(209, 105, 105, 0.4);
+                   background-color: var(--danger-color);
+                   color: var(--bg-color);
                 }
 
-                .empty-state {
-                    text-align: center;
-                    padding: 80px 20px;
-                    animation: fadeIn 0.4s ease;
-                }
-
-                .empty-icon {
-                    font-size: 64px;
-                    margin-bottom: 20px;
-                    opacity: 0.4;
-                }
-
-                .empty-state h2 {
-                    font-size: 24px;
-                    font-weight: 600;
-                    margin-bottom: 12px;
-                }
-
-                .empty-state p {
-                    color: var(--secondary-text);
-                    margin-bottom: 24px;
-                    font-size: 14px;
-                }
-
-                .test-result {
-                    margin-top: 12px;
-                    padding: 10px 12px;
-                    border-radius: 6px;
+                .test-result-overlay {
+                    position: absolute;
+                    top: 10px;
+                    right: 10px;
+                    padding: 8px 12px;
+                    border-radius: 4px;
                     font-size: 12px;
+                    z-index: 100;
                     display: none;
-                    animation: slideDown 0.3s ease;
+                    animation: slideIn 0.2s ease-out;
                 }
 
-                @keyframes slideDown {
-                    from { opacity: 0; transform: translateY(-10px); }
+                @keyframes slideIn {
+                    from { opacity: 0; transform: translateY(-5px); }
                     to { opacity: 1; transform: translateY(0); }
                 }
 
-                .test-result.success {
-                    background: rgba(34, 197, 94, 0.1);
-                    color: var(--success-color);
-                    border: 1px solid var(--success-color);
-                }
+                .success { background-color: var(--success-color); color: white; }
+                .error { background-color: var(--danger-color); color: white; }
 
-                .test-result.error {
-                    background: rgba(239, 68, 68, 0.1);
-                    color: var(--danger-color);
-                    border: 1px solid var(--danger-color);
-                }
-
-                .loading {
-                    opacity: 0.6;
-                    pointer-events: none;
-                }
-
-                .delete-confirmation {
+                /* Delete Confirm Overlay */
+                 .delete-confirm-overlay {
                     position: absolute;
-                    top: 0;
-                    left: 0;
-                    right: 0;
-                    bottom: 0;
-                    background: linear-gradient(135deg, rgba(0, 0, 0, 0.95), rgba(20, 20, 20, 0.98));
-                    backdrop-filter: blur(8px);
-                    border-radius: 12px;
+                    top: 0; left: 0; right: 0; bottom: 0;
+                    background: rgba(0,0,0,0.85);
+                    backdrop-filter: blur(2px);
                     display: flex;
                     align-items: center;
                     justify-content: center;
-                    animation: fadeIn 0.2s ease;
-                    z-index: 10;
-                    border: 1px solid rgba(239, 68, 68, 0.3);
-                }
-
-                .confirm-content {
-                    text-align: center;
-                    padding: 24px;
-                }
-
-                .confirm-content p {
-                    font-size: 15px;
-                    margin-bottom: 20px;
-                    color: var(--text-color);
-                    font-weight: 500;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    gap: 8px;
-                }
-
-                .confirm-content p::before {
-                    content: '⚠️';
-                    font-size: 20px;
-                }
-
-                .confirm-actions {
-                    display: flex;
-                    gap: 10px;
-                    justify-content: center;
-                }
-
-                .btn-confirm-yes,
-                .btn-confirm-no {
-                    padding: 9px 18px;
-                    border: none;
                     border-radius: 6px;
-                    font-size: 13px;
-                    font-weight: 500;
-                    cursor: pointer;
-                    transition: all 0.2s ease;
-                    display: flex;
-                    align-items: center;
-                    gap: 6px;
+                    z-index: 10;
+                    flex-direction: column;
+                    gap: 12px;
+                    animation: fadeIn 0.2s;
                 }
 
-                .btn-confirm-yes {
-                    background: #d16969;
+                .delete-confirm-overlay p {
                     color: white;
-                    box-shadow: 0 2px 8px rgba(209, 105, 105, 0.3);
+                    font-weight: 600;
+                    margin: 0;
                 }
-
-                .btn-confirm-yes::before {
-                    content: '🗑️';
-                    font-size: 14px;
-                }
-
-                .btn-confirm-yes:hover {
-                    background: #e07a7a;
-                    transform: translateY(-1px);
-                    box-shadow: 0 4px 12px rgba(209, 105, 105, 0.4);
-                }
-
-                .btn-confirm-yes:active {
-                    transform: scale(0.97);
-                }
-
-                .btn-confirm-no {
-                    background: var(--vscode-button-secondaryBackground);
-                    color: var(--vscode-button-secondaryForeground);
-                }
-
-                .btn-confirm-no:hover {
-                    background: var(--vscode-button-secondaryHoverBackground);
-                    transform: translateY(-1px);
-                    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-                }
-
-                .btn-confirm-no:active {
-                    transform: scale(0.97);
-                }
-
-                .card-actions {
-                    position: relative;
-                }
+                
+                .confirm-buttons { display: flex; gap: 8px; }
             </style>
         </head>
         <body>
             <div class="container">
                 <div class="header">
                     <div class="header-icon">
-                        <img src="${logoPath}" alt="PostgreSQL">
+                        <img src="${logoPath}" alt="Logo">
                     </div>
                     <h1>Connection Management</h1>
                     <p>Manage your PostgreSQL database connections</p>
-                    <div class="header-actions">
-                        <button class="btn-primary" onclick="addConnection()">
-                            <span class="btn-icon">➕</span>
-                            <span>Add Connection</span>
-                        </button>
-                    </div>
+                    <button class="btn-primary" onclick="addConnection()">
+                        <span>＋</span> Add Connection
+                    </button>
                 </div>
 
                 <div class="connections-grid">
@@ -666,6 +456,10 @@ export class ConnectionManagementPanel {
                 function addConnection() {
                     vscode.postMessage({ command: 'addConnection' });
                 }
+                
+                function editConnection(id) {
+                    vscode.postMessage({ command: 'edit', id: id });
+                }
 
                 function refreshConnections() {
                     vscode.postMessage({ command: 'refresh' });
@@ -673,92 +467,83 @@ export class ConnectionManagementPanel {
 
                 function testConnection(id) {
                     const btn = document.querySelector(\`[data-test-id="\${id}"]\`);
-                    const result = document.getElementById(\`test-result-\${id}\`);
-                    
-                    btn.classList.add('loading');
+                    const originalText = btn.innerHTML;
                     btn.textContent = 'Testing...';
-                    result.style.display = 'none';
+                    btn.disabled = true;
                     
-                    vscode.postMessage({ 
-                        command: 'test',
-                        id: id 
-                    });
+                    vscode.postMessage({ command: 'test', id: id });
+                    
+                    // Store original text
+                    btn.setAttribute('data-original-text', originalText);
+                }
+                
+                function showDeleteConfirm(id) {
+                    const card = document.querySelector(\`[data-card-id="\${id}"]\`);
+                    if (card.querySelector('.delete-confirm-overlay')) return;
+                    
+                    const overlay = document.createElement('div');
+                    overlay.className = 'delete-confirm-overlay';
+                    overlay.innerHTML = \`
+                        <p>Delete this connection?</p>
+                        <div class="confirm-buttons">
+                            <button class="btn" style="background:grey;color:white;border:none" onclick="this.closest('.delete-confirm-overlay').remove()">Cancel</button>
+                            <button class="btn" style="background:red;color:white;border:none" onclick="deleteConnection('\${id}')">Delete</button>
+                        </div>
+                    \`;
+                    card.appendChild(overlay);
                 }
 
-                // Add event delegation for delete buttons
-                document.addEventListener('click', function(event) {
-                    const deleteBtn = event.target.closest('.btn-delete');
-                    if (deleteBtn) {
-                        const id = deleteBtn.getAttribute('data-connection-id');
-                        const name = deleteBtn.getAttribute('data-connection-name');
-                        
-                        if (id) {
-                            // Show custom confirmation
-                            const card = deleteBtn.closest('.connection-card');
-                            const existingConfirm = card.querySelector('.delete-confirmation');
-                            
-                            if (existingConfirm) {
-                                existingConfirm.remove();
-                                return;
-                            }
-                            
-                            const confirmDiv = document.createElement('div');
-                            confirmDiv.className = 'delete-confirmation';
-                            confirmDiv.innerHTML = \`
-                                <div class="confirm-content">
-                                    <p>Delete "\${name}"?</p>
-                                    <div class="confirm-actions">
-                                        <button class="btn-confirm-no">Cancel</button>
-                                        <button class="btn-confirm-yes">Delete</button>
-                                    </div>
-                                </div>
-                            \`;
-                            
-                            card.querySelector('.card-actions').appendChild(confirmDiv);
-                            
-                            confirmDiv.querySelector('.btn-confirm-yes').addEventListener('click', function() {
-                                vscode.postMessage({ 
-                                    command: 'delete',
-                                    id: id 
-                                });
-                            });
-                            
-                            confirmDiv.querySelector('.btn-confirm-no').addEventListener('click', function() {
-                                confirmDiv.remove();
-                            });
-                        }
-                    }
-                });
+                function deleteConnection(id) {
+                    vscode.postMessage({ command: 'delete', id: id });
+                }
 
                 window.addEventListener('message', event => {
                     const message = event.data;
                     
                     if (message.type === 'testSuccess') {
                         const btn = document.querySelector(\`[data-test-id="\${message.id}"]\`);
-                        const result = document.getElementById(\`test-result-\${message.id}\`);
+                        const card = document.querySelector(\`[data-card-id="\${message.id}"]\`);
                         
-                        btn.classList.remove('loading');
-                        btn.textContent = '✓ Test';
+                        btn.innerHTML = 'Scan ✓';
+                        btn.disabled = false;
                         
-                        result.className = 'test-result success';
-                        result.textContent = '✓ Connection successful!';
-                        result.style.display = 'block';
+                        showNotification(card, 'Connection successful!', 'success');
                         
                         setTimeout(() => {
-                            result.style.display = 'none';
-                        }, 5000);
+                           const original = btn.getAttribute('data-original-text');
+                           if(original) btn.innerHTML = original;
+                        }, 3000);
+
                     } else if (message.type === 'testError') {
-                        const btn = document.querySelector(\`[data-test-id="\${message.id}"]\`);
-                        const result = document.getElementById(\`test-result-\${message.id}\`);
+                         const btn = document.querySelector(\`[data-test-id="\${message.id}"]\`);
+                        const card = document.querySelector(\`[data-card-id="\${message.id}"]\`);
                         
-                        btn.classList.remove('loading');
-                        btn.textContent = '✗ Test';
+                        btn.innerHTML = 'Error ✕';
+                        btn.disabled = false;
                         
-                        result.className = 'test-result error';
-                        result.textContent = \`✗ \${message.error}\`;
-                        result.style.display = 'block';
+                        showNotification(card, message.error, 'error');
+                         setTimeout(() => {
+                           const original = btn.getAttribute('data-original-text');
+                           if(original) btn.innerHTML = original;
+                        }, 3000);
                     }
                 });
+                
+                function showNotification(card, text, type) {
+                    const existing = card.querySelector('.test-result-overlay');
+                    if(existing) existing.remove();
+                    
+                    const el = document.createElement('div');
+                    el.className = \`test-result-overlay \${type}\`;
+                    el.textContent = text;
+                    card.appendChild(el);
+                    el.style.display = 'block';
+                    
+                    setTimeout(() => {
+                        el.style.opacity = '0';
+                        setTimeout(() => el.remove(), 300);
+                    }, 4000);
+                }
             </script>
         </body>
         </html>`;
@@ -766,66 +551,53 @@ export class ConnectionManagementPanel {
 
     private _getConnectionCardHtml(conn: ConnectionInfo & { hasPassword: boolean }): string {
         const connectionString = this._buildConnectionString(conn);
-        const authBadge = conn.hasPassword || conn.username
-            ? '<span class="status-badge has-auth">✓ Auth</span>'
-            : '<span class="status-badge no-auth">No Auth</span>';
+        const authStatus = conn.hasPassword || conn.username
+            ? 'Auth ✓'
+            : 'No Auth';
+
+        // Escaping helper
+        const escape = (s: string | undefined) => this._escapeHtml(s || '');
 
         return `
-            <div class="connection-card">
+            <div class="connection-card" data-card-id="${conn.id}">
                 <div class="card-header">
-                    <div>
-                        <div class="card-title">
-                            <span class="card-icon">🗄️</span>
-                            <span>${this._escapeHtml(conn.name)}</span>
-                        </div>
+                    <div class="card-title">
+                        <span style="font-size:1.2em">🗄️</span>
+                        <span>${escape(conn.name)}</span>
                     </div>
-                    <div class="card-status">
-                        <div class="live-indicator">
-                            <span class="live-dot"></span>
-                            <span>Live</span>
-                        </div>
-                        ${authBadge}
+                    <div class="status-badges">
+                        <span class="status-badge live">Live</span>
+                        <span class="status-badge ${conn.hasPassword || conn.username ? 'has-auth' : ''}">${authStatus}</span>
                     </div>
                 </div>
 
                 <div class="card-details">
                     <div class="detail-row">
-                        <span class="detail-icon">🌐</span>
                         <span class="detail-label">Host:</span>
-                        <span class="detail-value">${this._escapeHtml(conn.host)}:${conn.port}</span>
+                        <span class="detail-value">${escape(conn.host)}:${conn.port}</span>
                     </div>
-                    ${conn.database ? `
                     <div class="detail-row">
-                        <span class="detail-icon">💾</span>
                         <span class="detail-label">Database:</span>
-                        <span class="detail-value">${this._escapeHtml(conn.database)}</span>
+                        <span class="detail-value">${escape(conn.database)}</span>
                     </div>
-                    ` : ''}
-                    ${conn.username ? `
                     <div class="detail-row">
-                        <span class="detail-icon">👤</span>
                         <span class="detail-label">User:</span>
-                        <span class="detail-value">${this._escapeHtml(conn.username)}</span>
+                        <span class="detail-value">${escape(conn.username)}</span>
                     </div>
-                    ` : ''}
                 </div>
-
-                <div class="connection-string">
-                    ${this._escapeHtml(connectionString)}
-                </div>
-
-                <div id="test-result-${conn.id}" class="test-result"></div>
 
                 <div class="card-actions">
-                    <button class="btn btn-test" data-test-id="${conn.id}" onclick="testConnection('${conn.id}')">
+                    <button class="btn" onclick="editConnection('${conn.id}')">
+                        ✏️ Edit
+                    </button>
+                    <button class="btn" data-test-id="${conn.id}" onclick="testConnection('${conn.id}')">
                         ⚡ Test
                     </button>
-                    <button class="btn btn-delete" data-connection-id="${conn.id}" data-connection-name="${this._escapeHtml(conn.name)}">
+                    <button class="btn btn-delete" onclick="showDeleteConfirm('${conn.id}')">
                         🗑️ Delete
                     </button>
                 </div>
-            </div>
-        `;
+            </div>`;
     }
 
     private _buildConnectionString(conn: ConnectionInfo): string {

@@ -38,8 +38,9 @@
 - 🔌 **Secure Connections** — VS Code SecretStorage encryption
 - 📊 **Live Dashboard** — Real-time metrics & query monitoring
 - 📓 **SQL Notebooks** — Interactive notebooks with AI assistance
-- 🌳 **Database Explorer** — Browse tables, views, functions, types
+- 🌳 **Database Explorer** — Browse tables, views, functions, types, FDWs
 - 🛠️ **Object Operations** — CRUD, scripts, VACUUM, ANALYZE, REINDEX
+- 🌍 **Foreign Data Wrappers** — Manage foreign servers, user mappings & tables
 - 🤖 **AI-Powered** — GitHub Copilot, OpenAI, Anthropic, Gemini
 - 📤 **Export Data** — Export results to CSV, JSON, or Excel
 

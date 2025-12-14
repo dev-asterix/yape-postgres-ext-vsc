@@ -1,6 +1,7 @@
 import { Client } from 'pg';
 import { ConnectionConfig } from '../common/types';
 import { SecretStorageService } from './SecretStorageService';
+import { SSHService } from './SSHService';
 
 export class ConnectionManager {
     private static instance: ConnectionManager;
@@ -32,14 +33,30 @@ export class ConnectionManager {
             // If username is provided but password is not found in storage, it might still work for some auth methods
         }
 
-        const client = new Client({
-            host: config.host,
-            port: config.port,
+        const clientConfig: any = {
             user: config.username || undefined,
             password: password || undefined,
             database: config.database || 'postgres',
             connectionTimeoutMillis: 5000
-        });
+        };
+
+        if (config.ssh && config.ssh.enabled) {
+            try {
+                const stream = await SSHService.getInstance().createStream(
+                    config.ssh,
+                    config.host,
+                    config.port
+                );
+                clientConfig.stream = stream;
+            } catch (err: any) {
+                throw new Error(`SSH Connection failed: ${err.message}`);
+            }
+        } else {
+            clientConfig.host = config.host;
+            clientConfig.port = config.port;
+        }
+
+        const client = new Client(clientConfig);
 
         await client.connect();
         this.connections.set(key, client);
@@ -54,7 +71,7 @@ export class ConnectionManager {
     public async closeConnection(config: ConnectionConfig): Promise<void> {
         const key = this.getConnectionKey(config);
         const client = this.connections.get(key);
-        
+
         if (client) {
             try {
                 await client.end();
@@ -67,14 +84,14 @@ export class ConnectionManager {
 
     public async closeAllConnectionsById(connectionId: string): Promise<void> {
         const keysToClose: string[] = [];
-        
+
         // Find all connections with this ID
         for (const key of this.connections.keys()) {
             if (key.startsWith(`${connectionId}:`)) {
                 keysToClose.push(key);
             }
         }
-        
+
         // Close all found connections
         for (const key of keysToClose) {
             const client = this.connections.get(key);
@@ -87,7 +104,7 @@ export class ConnectionManager {
                 }
             }
         }
-        
+
         console.log(`Closed ${keysToClose.length} connections for ID: ${connectionId}`);
     }
 

@@ -6,6 +6,13 @@ export interface ConnectionConfig {
     username?: string;
     password?: string;
     database?: string;
+    ssh?: {
+        enabled: boolean;
+        host: string;
+        port: number;
+        username: string;
+        privateKeyPath?: string;
+    };
 }
 
 export interface PostgresMetadata {

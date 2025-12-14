@@ -1,5 +1,6 @@
 import { Client } from 'pg';
 import * as vscode from 'vscode';
+import { SSHService } from './services/SSHService';
 
 export interface ConnectionInfo {
     id: string;
@@ -9,6 +10,13 @@ export interface ConnectionInfo {
     username?: string;
     password?: string;
     database?: string;
+    ssh?: {
+        enabled: boolean;
+        host: string;
+        port: number;
+        username: string;
+        privateKeyPath?: string;
+    };
 }
 
 export class ConnectionFormPanel {
@@ -17,7 +25,7 @@ export class ConnectionFormPanel {
     private readonly _extensionUri: vscode.Uri;
     private _disposables: vscode.Disposable[] = [];
 
-    private constructor(panel: vscode.WebviewPanel, extensionUri: vscode.Uri, private readonly _extensionContext: vscode.ExtensionContext) {
+    private constructor(panel: vscode.WebviewPanel, extensionUri: vscode.Uri, private readonly _extensionContext: vscode.ExtensionContext, private readonly _connectionToEdit?: ConnectionInfo) {
         this._panel = panel;
         this._extensionUri = extensionUri;
 
@@ -29,14 +37,26 @@ export class ConnectionFormPanel {
                 switch (message.command) {
                     case 'testConnection':
                         try {
-                            // First try with specified database
-                            const client = new Client({
-                                host: message.connection.host,
-                                port: message.connection.port,
+                            const config: any = {
                                 user: message.connection.username || undefined,
                                 password: message.connection.password || undefined,
                                 database: message.connection.database || 'postgres'
-                            });
+                            };
+
+                            if (message.connection.ssh && message.connection.ssh.enabled) {
+                                const stream = await SSHService.getInstance().createStream(
+                                    message.connection.ssh,
+                                    message.connection.host,
+                                    message.connection.port
+                                );
+                                config.stream = stream;
+                            } else {
+                                config.host = message.connection.host;
+                                config.port = message.connection.port;
+                            }
+
+                            // First try with specified database
+                            const client = new Client(config);
                             try {
                                 await client.connect();
                                 const result = await client.query('SELECT version()');
@@ -46,6 +66,12 @@ export class ConnectionFormPanel {
                                     version: result.rows[0].version
                                 });
                             } catch (err: any) {
+                                if (config.stream) {
+                                    // If using stream, we can't easily fallback without creating a new stream
+                                    // simpler to just throw for now or re-create stream
+                                    throw err;
+                                }
+
                                 // If database doesn't exist, try postgres database
                                 if (err.code === '3D000' && message.connection.database !== 'postgres') {
                                     const fallbackClient = new Client({
@@ -76,13 +102,25 @@ export class ConnectionFormPanel {
 
                     case 'saveConnection':
                         try {
-                            const client = new Client({
-                                host: message.connection.host,
-                                port: message.connection.port,
+                            const config: any = {
                                 user: message.connection.username || undefined,
                                 password: message.connection.password || undefined,
                                 database: 'postgres'
-                            });
+                            };
+
+                            if (message.connection.ssh && message.connection.ssh.enabled) {
+                                const stream = await SSHService.getInstance().createStream(
+                                    message.connection.ssh,
+                                    message.connection.host,
+                                    message.connection.port
+                                );
+                                config.stream = stream;
+                            } else {
+                                config.host = message.connection.host;
+                                config.port = message.connection.port;
+                            }
+
+                            const client = new Client(config);
 
                             await client.connect();
 
@@ -92,18 +130,30 @@ export class ConnectionFormPanel {
 
                             const connections = this.getStoredConnections();
                             const newConnection: ConnectionInfo = {
-                                id: Date.now().toString(),
+                                id: this._connectionToEdit ? this._connectionToEdit.id : Date.now().toString(),
                                 name: message.connection.name,
                                 host: message.connection.host,
                                 port: message.connection.port,
                                 username: message.connection.username || undefined,
                                 password: message.connection.password || undefined,
-                                database: message.connection.database // Add database to saved connection
+                                database: message.connection.database,
+                                ssh: message.connection.ssh
                             };
-                            connections.push(newConnection);
+
+                            if (this._connectionToEdit) {
+                                const index = connections.findIndex(c => c.id === this._connectionToEdit!.id);
+                                if (index !== -1) {
+                                    connections[index] = newConnection;
+                                } else {
+                                    connections.push(newConnection);
+                                }
+                            } else {
+                                connections.push(newConnection);
+                            }
+
                             await this.storeConnections(connections);
 
-                            vscode.window.showInformationMessage('Connection saved successfully!');
+                            vscode.window.showInformationMessage(`Connection ${this._connectionToEdit ? 'updated' : 'saved'} successfully!`);
                             vscode.commands.executeCommand('postgres-explorer.refreshConnections');
                             this._panel.dispose();
                         } catch (err: any) {
@@ -118,7 +168,7 @@ export class ConnectionFormPanel {
         );
     }
 
-    public static show(extensionUri: vscode.Uri, extensionContext: vscode.ExtensionContext) {
+    public static show(extensionUri: vscode.Uri, extensionContext: vscode.ExtensionContext, connectionToEdit?: ConnectionInfo) {
         if (ConnectionFormPanel.currentPanel) {
             ConnectionFormPanel.currentPanel._panel.reveal();
             return;
@@ -126,14 +176,14 @@ export class ConnectionFormPanel {
 
         const panel = vscode.window.createWebviewPanel(
             'connectionForm',
-            'Add PostgreSQL Connection',
+            connectionToEdit ? 'Edit Connection' : 'Add PostgreSQL Connection',
             vscode.ViewColumn.One,
             {
                 enableScripts: true
             }
         );
 
-        ConnectionFormPanel.currentPanel = new ConnectionFormPanel(panel, extensionUri, extensionContext);
+        ConnectionFormPanel.currentPanel = new ConnectionFormPanel(panel, extensionUri, extensionContext, connectionToEdit);
     }
 
     private async _initialize() {
@@ -145,15 +195,25 @@ export class ConnectionFormPanel {
         this._panel.webview.html = await this._getHtmlForWebview(this._panel.webview);
     }
 
-    private _getHtmlForWebview(webview: vscode.Webview): string {
+    private async _getHtmlForWebview(webview: vscode.Webview): Promise<string> {
         const logoPath = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'resources', 'postgres-vsc-icon.png'));
+
+        let connectionData = null;
+        if (this._connectionToEdit) {
+            // Get the password from secret storage
+            const password = await this._extensionContext.secrets.get(`postgres-password-${this._connectionToEdit.id}`);
+            connectionData = {
+                ...this._connectionToEdit,
+                password
+            };
+        }
 
         return `<!DOCTYPE html>
         <html lang="en">
         <head>
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>Add PostgreSQL Connection</title>
+            <title>${this._connectionToEdit ? 'Edit Connection' : 'Add PostgreSQL Connection'}</title>
             <style>
                 :root {
                     --bg-color: var(--vscode-editor-background);
@@ -474,7 +534,7 @@ export class ConnectionFormPanel {
                     <div class="header-icon">
                         <img src="${logoPath}" alt="PostgreSQL">
                     </div>
-                    <h1>New Connection</h1>
+                    <h1>${this._connectionToEdit ? 'Edit Connection' : 'New Connection'}</h1>
                     <p>Configure your PostgreSQL database connection</p>
                 </div>
                 
@@ -558,8 +618,49 @@ export class ConnectionFormPanel {
                             </button>
                             <button type="submit" id="addConnection" class="btn-primary hidden">
                                 <span class="btn-icon">✓</span>
-                                <span>Add Connection</span>
+                                <span>${this._connectionToEdit ? 'Save Changes' : 'Add Connection'}</span>
                             </button>
+                        </div>
+                        
+                        <!-- SSH Settings (Collapsible) -->
+                        <div style="margin-top: 32px; border-top: 1px solid var(--border-color); padding-top: 24px;">
+                            <div class="section-header" style="cursor: pointer;" onclick="toggleSSH()">
+                                <div class="section-icon">🔒</div>
+                                <div class="section-title">SSH Tunnel (Optional)</div>
+                                <span id="ssh-arrow" style="margin-left: auto; transition: transform 0.2s;">▼</span>
+                            </div>
+
+                            <div id="ssh-section" style="display: none;">
+                                <div class="form-group" style="margin-bottom: 24px;">
+                                    <label class="checkbox-label" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                        <input type="checkbox" id="sshEnabled" name="sshEnabled" style="width: auto;">
+                                        <span>Enable SSH Tunnel</span>
+                                    </label>
+                                </div>
+
+                                <div id="ssh-fields" style="opacity: 0.5; pointer-events: none; transition: opacity 0.2s;">
+                                    <div class="form-grid">
+                                        <div class="form-group">
+                                            <label for="sshHost">SSH Host</label>
+                                            <input type="text" id="sshHost" name="sshHost" placeholder="bastion.example.com">
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="sshPort">SSH Port</label>
+                                            <input type="number" id="sshPort" name="sshPort" value="22">
+                                        </div>
+                                    </div>
+                                    <div class="form-grid">
+                                        <div class="form-group">
+                                            <label for="sshUsername">SSH Username</label>
+                                            <input type="text" id="sshUsername" name="sshUsername" placeholder="ec2-user">
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="sshKeyPath">Private Key Path</label>
+                                            <input type="text" id="sshKeyPath" name="sshKeyPath" placeholder="/home/user/.ssh/id_rsa">
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </form>
                 </div>
@@ -572,6 +673,67 @@ export class ConnectionFormPanel {
                 const addBtn = document.getElementById('addConnection');
                 const form = document.getElementById('connectionForm');
                 const inputs = form.querySelectorAll('input');
+
+                // Injected connection data
+                const connectionData = ${JSON.stringify(connectionData)};
+
+                if (connectionData) {
+                    document.getElementById('name').value = connectionData.name || '';
+                    document.getElementById('host').value = connectionData.host || '';
+                    document.getElementById('port').value = connectionData.port || 5432;
+                    document.getElementById('database').value = connectionData.database || '';
+                    document.getElementById('username').value = connectionData.username || '';
+                    document.getElementById('password').value = connectionData.password || '';
+                    
+                    if (connectionData.ssh) {
+                        document.getElementById('sshEnabled').checked = connectionData.ssh.enabled;
+                        document.getElementById('sshHost').value = connectionData.ssh.host || '';
+                        document.getElementById('sshPort').value = connectionData.ssh.port || 22;
+                        document.getElementById('sshUsername').value = connectionData.ssh.username || '';
+                        document.getElementById('sshKeyPath').value = connectionData.ssh.privateKeyPath || '';
+                        
+                        // Trigger SSH UI state update
+                        setTimeout(() => {
+                             const sshSection = document.getElementById('ssh-section');
+                             const arrow = document.getElementById('ssh-arrow');
+                             sshSection.style.display = 'block';
+                             arrow.style.transform = 'rotate(180deg)';
+                             updateSSHState();
+                        }, 100);
+                    }
+                }
+
+                function toggleSSH() {
+                    const section = document.getElementById('ssh-section');
+                    const arrow = document.getElementById('ssh-arrow');
+                    if (section.style.display === 'none') {
+                        section.style.display = 'block';
+                        arrow.style.transform = 'rotate(180deg)';
+                    } else {
+                        section.style.display = 'none';
+                        arrow.style.transform = 'rotate(0deg)';
+                    }
+                }
+
+                function updateSSHState() {
+                    const enabled = document.getElementById('sshEnabled').checked;
+                    const fields = document.getElementById('ssh-fields');
+                    const inputs = fields.querySelectorAll('input');
+                    
+                    if (enabled) {
+                        fields.style.opacity = '1';
+                        fields.style.pointerEvents = 'auto';
+                        inputs.forEach(i => i.required = true);
+                        // Key path handles optionality differently usually, but for now required if enabled
+                        document.getElementById('sshKeyPath').required = true;
+                    } else {
+                        fields.style.opacity = '0.5';
+                        fields.style.pointerEvents = 'none';
+                        inputs.forEach(i => i.required = false);
+                    }
+                }
+
+                document.getElementById('sshEnabled').addEventListener('change', updateSSHState);
 
                 let isTested = false;
 
@@ -593,8 +755,9 @@ export class ConnectionFormPanel {
                 function getFormData() {
                     const usernameInput = document.getElementById('username').value.trim();
                     const passwordInput = document.getElementById('password').value;
+                    const sshEnabled = document.getElementById('sshEnabled').checked;
                     
-                    return {
+                    const data = {
                         name: document.getElementById('name').value,
                         host: document.getElementById('host').value,
                         port: parseInt(document.getElementById('port').value),
@@ -602,6 +765,18 @@ export class ConnectionFormPanel {
                         username: usernameInput || undefined,
                         password: passwordInput || undefined
                     };
+
+                    if (sshEnabled) {
+                        data.ssh = {
+                            enabled: true,
+                            host: document.getElementById('sshHost').value,
+                            port: parseInt(document.getElementById('sshPort').value),
+                            username: document.getElementById('sshUsername').value,
+                            privateKeyPath: document.getElementById('sshKeyPath').value
+                        };
+                    }
+
+                    return data;
                 }
 
                 // Reset tested state on any input change

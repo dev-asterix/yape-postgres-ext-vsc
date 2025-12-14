@@ -73,8 +73,8 @@ export async function activate(context: vscode.ExtensionContext) {
     const commands = [
         {
             command: 'postgres-explorer.addConnection',
-            callback: () => {
-                ConnectionFormPanel.show(context.extensionUri, context);
+            callback: (connection?: any) => {
+                ConnectionFormPanel.show(context.extensionUri, context, connection);
             }
         },
         {
