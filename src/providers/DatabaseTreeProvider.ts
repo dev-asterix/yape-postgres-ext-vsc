@@ -66,10 +66,10 @@ export class DatabaseTreeProvider implements vscode.TreeDataProvider<DatabaseTre
             ));
         }
 
-        // Check if connection is disconnected - if so, return empty to prevent expansion
-        if (element.connectionId && this.disconnectedConnections.has(element.connectionId)) {
-            console.log(`Connection ${element.connectionId} is disconnected, returning empty children`);
-            return [];
+        // Auto-connect on expansion: if connection is disconnected, mark it as connected
+        if (element.type === 'connection' && element.connectionId && this.disconnectedConnections.has(element.connectionId)) {
+            console.log(`Connection ${element.connectionId} is being expanded, auto-connecting...`);
+            this.markConnectionConnected(element.connectionId);
         }
 
         const connection = connections.find(c => c.id === element.connectionId);
@@ -96,11 +96,6 @@ export class DatabaseTreeProvider implements vscode.TreeDataProvider<DatabaseTre
             });
 
             console.log(`Successfully connected to ${connection.name}`);
-
-            // Mark connection as connected when successfully connected (only if not already connected)
-            if (element.connectionId && this.disconnectedConnections.has(element.connectionId)) {
-                this.markConnectionConnected(element.connectionId);
-            }
 
             switch (element.type) {
                 case 'connection':
