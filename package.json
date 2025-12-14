@@ -1,7 +1,7 @@
 {
   "name": "postgres-explorer",
   "displayName": "PgStudio (PostgreSQL Explorer)",
-  "version": "0.6.7",
+  "version": "0.6.8",
   "description": "PostgreSQL database explorer for VS Code with notebook support",
   "publisher": "ric-v",
   "private": false,
@@ -1592,13 +1592,13 @@
   ],
   "main": "./dist/extension.js",
   "scripts": {
-    "vscode:prepublish": "npm run esbuild-base --minify && npm run esbuild-renderer --minify",
-    "esbuild-base": "esbuild ./src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --external:ssh2 --format=cjs --platform=node",
+    "vscode:prepublish": "npm run esbuild-base -- --minify && npm run esbuild-renderer -- --minify",
+    "esbuild-base": "esbuild ./src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --external:ssh2 --external:pg --format=cjs --platform=node --main-fields=main",
     "esbuild-renderer": "esbuild ./src/renderer_v2.ts --bundle --outfile=dist/renderer_v2.js --format=esm --platform=browser",
     "compile": "tsc -p ./ && npm run esbuild-renderer",
     "watch": "tsc -watch -p ./",
-    "esbuild": "npm run esbuild-base --sourcemap && npm run esbuild-renderer --sourcemap",
-    "esbuild-watch": "npm run esbuild-base --sourcemap --watch & npm run esbuild-renderer --sourcemap --watch",
+    "esbuild": "npm run esbuild-base -- --sourcemap && npm run esbuild-renderer -- --sourcemap",
+    "esbuild-watch": "npm run esbuild-base -- --sourcemap --watch & npm run esbuild-renderer -- --sourcemap --watch",
     "test": "ts-mocha -r src/test/setup.ts 'src/test/unit/**/*.test.ts'",
     "coverage": "nyc npm run test"
   },
