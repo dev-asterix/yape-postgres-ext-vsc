@@ -1691,6 +1691,29 @@ footer {
   font-size: 0.8rem;
 }
 
+#features {
+  padding: 6rem 0;
+  background: linear-gradient(180deg, rgba(124, 58, 237, 0.02), rgba(0, 212, 255, 0.02));
+}
+
+.feature-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: fit-content;
+  padding: 0.5rem 1.25rem;
+  background: rgba(124, 58, 237, 0.1);
+  border: 1px solid rgba(124, 58, 237, 0.3);
+  color: var(--accent-purple);
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 0 auto 1.5rem;
+  box-shadow: 0 0 20px rgba(124, 58, 237, 0.1);
+}
+
 .feature-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
