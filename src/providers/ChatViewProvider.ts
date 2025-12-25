@@ -52,20 +52,106 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * Send a query to the chat and pre-fill the input
-   * Called from the "Chat" CodeLens button
+   * Send a query and results to the chat as attachments
+   * Called from the "Chat" CodeLens button or "Send to Chat" result button
+   * Does NOT auto-send - waits for user to add their context
    */
-  public sendToChat(data: { query: string; results?: string; message: string }): void {
+  public async sendToChat(data: { query: string; results?: string; message: string }): Promise<void> {
+    // Wait a bit for the view to be ready after focus
+    await new Promise(resolve => setTimeout(resolve, 300));
+
     if (!this._view) {
       vscode.window.showWarningMessage('Chat view not available. Please open the SQL Assistant panel first.');
       return;
     }
 
-    // Send message to webview to pre-fill input
-    this._view.webview.postMessage({
-      type: 'prefillInput',
-      message: data.message
-    });
+    console.log('[ChatViewProvider] Sending file attachments to webview');
+
+    try {
+      const tempDir = os.tmpdir();
+
+      // Create query file
+      if (data.query) {
+        const queryFileName = `query_${Date.now()}.sql`;
+        const queryFilePath = path.join(tempDir, queryFileName);
+        await fs.promises.writeFile(queryFilePath, data.query, 'utf8');
+
+        this._view.webview.postMessage({
+          type: 'fileAttached',
+          file: {
+            name: queryFileName,
+            content: data.query,
+            type: 'sql',
+            path: queryFilePath
+          }
+        });
+      }
+
+      // Create results file if we have results - convert to CSV like Analyze Data does
+      if (data.results) {
+        try {
+          const resultsData = JSON.parse(data.results);
+          const columns: string[] = resultsData.columns || [];
+          const rows: any[] = resultsData.rows || [];
+
+          // Build CSV content
+          let csvContent = '';
+
+          // Header row
+          if (columns.length > 0) {
+            csvContent = columns.map((col: string) => `"${col}"`).join(',') + '\n';
+          }
+
+          // Data rows
+          for (const row of rows) {
+            const csvRow = columns.map((col: string) => {
+              const val = row[col];
+              if (val === null || val === undefined) return '';
+              if (typeof val === 'string') return `"${val.replace(/"/g, '""')}"`;
+              if (typeof val === 'object') return `"${JSON.stringify(val).replace(/"/g, '""')}"`;
+              return String(val);
+            }).join(',');
+            csvContent += csvRow + '\n';
+          }
+
+          const resultsFileName = `results_${Date.now()}.csv`;
+          const resultsFilePath = path.join(tempDir, resultsFileName);
+          await fs.promises.writeFile(resultsFilePath, csvContent, 'utf8');
+
+          this._view.webview.postMessage({
+            type: 'fileAttached',
+            file: {
+              name: resultsFileName,
+              content: csvContent,
+              type: 'csv',
+              path: resultsFilePath
+            }
+          });
+        } catch (parseError) {
+          // Fallback: attach as JSON if parsing fails
+          const resultsFileName = `results_${Date.now()}.json`;
+          const resultsFilePath = path.join(tempDir, resultsFileName);
+          await fs.promises.writeFile(resultsFilePath, data.results, 'utf8');
+
+          this._view.webview.postMessage({
+            type: 'fileAttached',
+            file: {
+              name: resultsFileName,
+              content: data.results,
+              type: 'json',
+              path: resultsFilePath
+            }
+          });
+        }
+      }
+
+      // Show toast in chat to let user know files are attached
+      vscode.window.showInformationMessage('Query and results attached to chat. Add your question and send!');
+
+    } catch (error) {
+      console.error('[ChatViewProvider] Failed to create temp files:', error);
+      vscode.window.showErrorMessage('Failed to attach files to chat');
+    }
   }
 
   public resolveWebviewView(
@@ -131,6 +217,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           break;
         case 'optimizeQuery':
           await this.handleOptimizeQuery(data.query, data.executionTime);
+          break;
+        case 'cancelRequest':
+          this._aiService.cancel();
+          this._setTypingIndicator(false);
+          this._isProcessing = false;
+          vscode.window.showInformationMessage('AI request cancelled.');
           break;
 
         case 'getHistory':

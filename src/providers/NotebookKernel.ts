@@ -599,6 +599,13 @@ export class PostgresKernel implements vscode.Disposable {
           vscode.window.showErrorMessage(`Failed to delete row: ${err.message}`);
           console.error('Delete row error:', err);
         }
+      } else if (event.message.type === 'sendToChat') {
+        console.log('PostgresKernel: Processing sendToChat message');
+        const { data } = event.message;
+
+        // Focus chat view and send the message
+        await vscode.commands.executeCommand('postgresExplorer.chatView.focus');
+        await vscode.commands.executeCommand('postgres-explorer.sendToChat', data);
       }
     });
   }

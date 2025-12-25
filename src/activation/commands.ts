@@ -735,9 +735,9 @@ export function registerAllCommands(
 
     {
       command: 'postgres-explorer.sendToChat',
-      callback: (data: { query: string; results?: string; message: string }) => {
+      callback: async (data: { query: string; results?: string; message: string }) => {
         if (chatViewProviderInstance) {
-          chatViewProviderInstance.sendToChat(data);
+          await chatViewProviderInstance.sendToChat(data);
         }
       }
     },

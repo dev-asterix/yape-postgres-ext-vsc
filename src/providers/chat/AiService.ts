@@ -7,9 +7,26 @@ import { ChatMessage } from './types';
 
 export class AiService {
   private _messages: ChatMessage[] = [];
+  private _cancellationTokenSource: vscode.CancellationTokenSource | null = null;
+  private _abortController: AbortController | null = null;
 
   setMessages(messages: ChatMessage[]): void {
     this._messages = messages;
+  }
+
+  /**
+   * Cancel any ongoing AI request
+   */
+  cancel(): void {
+    if (this._cancellationTokenSource) {
+      this._cancellationTokenSource.cancel();
+      this._cancellationTokenSource.dispose();
+      this._cancellationTokenSource = null;
+    }
+    if (this._abortController) {
+      this._abortController.abort();
+      this._abortController = null;
+    }
   }
 
   buildSystemPrompt(): string {
@@ -153,14 +170,25 @@ Make these questions relevant to the topic discussed and progressively more adva
     console.log('[AiService] System prompt length:', systemPrompt.length);
     console.log('[AiService] Conversation history messages:', this._messages.length);
 
-    const chatRequest = await model.sendRequest(messages, {}, new vscode.CancellationTokenSource().token);
-    let responseText = '';
+    // Create and store cancellation token source for this request
+    this._cancellationTokenSource = new vscode.CancellationTokenSource();
 
-    for await (const fragment of chatRequest.text) {
-      responseText += fragment;
+    try {
+      const chatRequest = await model.sendRequest(messages, {}, this._cancellationTokenSource.token);
+      let responseText = '';
+
+      for await (const fragment of chatRequest.text) {
+        responseText += fragment;
+      }
+
+      return responseText;
+    } finally {
+      // Clean up cancellation token source
+      if (this._cancellationTokenSource) {
+        this._cancellationTokenSource.dispose();
+        this._cancellationTokenSource = null;
+      }
     }
-
-    return responseText;
   }
 
   // Sanitize content to remove any HTML/CSS artifacts before sending to AI

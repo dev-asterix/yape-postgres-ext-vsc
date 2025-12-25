@@ -207,6 +207,7 @@ export const activate: ActivationFunction = context => {
       actionsBar.style.padding = '8px 12px';
       actionsBar.style.gap = '8px';
       actionsBar.style.alignItems = 'center';
+      actionsBar.style.justifyContent = 'space-between';
       actionsBar.style.borderBottom = '1px solid var(--vscode-panel-border)';
       actionsBar.style.background = 'var(--vscode-editor-background)';
 
@@ -309,13 +310,51 @@ export const activate: ActivationFunction = context => {
         executionTime
       );
 
+
       const exportBtn = createExportButton(columns, currentRows, tableInfo, context, query);
 
-      actionsBar.appendChild(selectAllBtn);
-      actionsBar.appendChild(copyBtn);
-      actionsBar.appendChild(exportBtn);
-      actionsBar.appendChild(analyzeBtn);
-      actionsBar.appendChild(optimizeBtn);
+      // Left group: Select, Copy, Export
+      const leftGroup = document.createElement('div');
+      leftGroup.style.display = 'flex';
+      leftGroup.style.gap = '8px';
+      leftGroup.style.alignItems = 'center';
+      leftGroup.appendChild(selectAllBtn);
+      leftGroup.appendChild(copyBtn);
+      leftGroup.appendChild(exportBtn);
+
+      // Copy to Chat button
+      const copyToChatBtn = createButton('💬 Send to Chat', true);
+      copyToChatBtn.title = 'Send results to SQL Assistant chat';
+      copyToChatBtn.addEventListener('click', () => {
+        // Prepare clean data for file attachments
+        const rowsToSend = currentRows.slice(0, 100); // Limit to first 100 rows
+        const resultsJson = JSON.stringify({
+          totalRows: currentRows.length,
+          columns: columns,
+          rows: rowsToSend
+        }, null, 2);
+
+        context.postMessage?.({
+          type: 'sendToChat',
+          data: {
+            query: query || '-- Query',
+            results: resultsJson,
+            message: '' // Not used anymore, files are attached instead
+          }
+        });
+      });
+
+      // Right group: AI buttons
+      const rightGroup = document.createElement('div');
+      rightGroup.style.display = 'flex';
+      rightGroup.style.gap = '8px';
+      rightGroup.style.alignItems = 'center';
+      rightGroup.appendChild(copyToChatBtn);
+      rightGroup.appendChild(analyzeBtn);
+      rightGroup.appendChild(optimizeBtn);
+
+      actionsBar.appendChild(leftGroup);
+      actionsBar.appendChild(rightGroup);
 
       // Helper to detect numeric columns
       const getNumericColumns = (): string[] => {

@@ -756,6 +756,36 @@ export function getWebviewHtml(webview: vscode.Webview, markedUri: vscode.Uri, h
             height: 14px;
         }
 
+        .stop-btn {
+            flex-shrink: 0;
+            width: 28px;
+            height: 28px;
+            padding: 0;
+            background: var(--vscode-errorForeground);
+            color: var(--vscode-editor-background);
+            border: none;
+            border-radius: var(--chat-radius-sm);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all var(--transition-fast);
+        }
+
+        .stop-btn:hover {
+            opacity: 0.85;
+            transform: scale(1.05);
+        }
+
+        .stop-btn:active {
+            transform: scale(0.95);
+        }
+
+        .stop-btn svg {
+            width: 12px;
+            height: 12px;
+        }
+
         .attach-btn {
             flex-shrink: 0;
             width: 28px;
@@ -1007,6 +1037,26 @@ export function getWebviewHtml(webview: vscode.Webview, markedUri: vscode.Uri, h
             font-style: italic;
             margin-top: 6px;
             animation: fadeInOut 0.3s ease;
+        }
+
+        .cancel-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            margin-top: 8px;
+            padding: 4px 10px;
+            font-size: 11px;
+            color: var(--vscode-errorForeground);
+            background: transparent;
+            border: 1px solid var(--vscode-errorForeground);
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+
+        .cancel-btn:hover {
+            background: var(--vscode-errorForeground);
+            color: var(--vscode-editor-background);
         }
 
         @keyframes fadeInOut {
@@ -1473,6 +1523,11 @@ export function getWebviewHtml(webview: vscode.Webview, markedUri: vscode.Uri, h
                         <path d="M1.5 1.5L14.5 8L1.5 14.5V9L10.5 8L1.5 7V1.5Z"/>
                     </svg>
                 </button>
+                <button class="stop-btn" id="stopBtn" onclick="cancelRequest()" title="Stop generation" style="display: none;">
+                    <svg viewBox="0 0 16 16" fill="currentColor">
+                        <rect x="3" y="3" width="10" height="10" rx="1"/>
+                    </svg>
+                </button>
             </div>
         </div>
     </div>
@@ -1483,6 +1538,7 @@ export function getWebviewHtml(webview: vscode.Webview, markedUri: vscode.Uri, h
         const messagesContainer = document.getElementById('messagesContainer');
         const chatInput = document.getElementById('chatInput');
         const sendBtn = document.getElementById('sendBtn');
+        const stopBtn = document.getElementById('stopBtn');
         const attachBtn = document.getElementById('attachBtn');
         const emptyState = document.getElementById('emptyState');
         const typingIndicator = document.getElementById('typingIndicator');
@@ -2122,6 +2178,12 @@ function renderMentionChips() {
             });
         }
 
+        function cancelRequest() {
+            vscode.postMessage({
+                type: 'cancelRequest'
+            });
+        }
+
         function handleKeyDown(event) {
             // Check mention picker navigation first
             if (handleMentionKeydown(event)) {
@@ -2500,9 +2562,15 @@ function renderMentionChips() {
                         typingIndicator.classList.add('visible');
                         startLoadingMessages();
                         messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                        // Swap send button with stop button
+                        sendBtn.style.display = 'none';
+                        stopBtn.style.display = 'flex';
                     } else {
                         typingIndicator.classList.remove('visible');
                         stopLoadingMessages();
+                        // Swap stop button back to send button
+                        stopBtn.style.display = 'none';
+                        sendBtn.style.display = 'flex';
                     }
                     break;
                 case 'fileAttached':

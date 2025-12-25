@@ -90,6 +90,14 @@ export async function activate(context: vscode.ExtensionContext) {
       }
       return;
     }
+    if (message.type === 'sendToChat') {
+      if (chatViewProviderInstance) {
+        // Focus chat view first
+        await vscode.commands.executeCommand('postgresExplorer.chatView.focus');
+        await chatViewProviderInstance.sendToChat(message.data);
+      }
+      return;
+    }
 
     if (message.type === 'execute_update_background') {
       console.log('Extension: Processing execute_update_background');
