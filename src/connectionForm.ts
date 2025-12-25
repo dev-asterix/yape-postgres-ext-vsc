@@ -3,212 +3,230 @@ import * as vscode from 'vscode';
 import { SSHService } from './services/SSHService';
 
 export interface ConnectionInfo {
-    id: string;
-    name: string;
+  id: string;
+  name: string;
+  host: string;
+  port: number;
+  username?: string;
+  password?: string;
+  database?: string;
+  // Advanced connection options
+  sslmode?: 'disable' | 'allow' | 'prefer' | 'require' | 'verify-ca' | 'verify-full';
+  sslCertPath?: string;
+  sslKeyPath?: string;
+  sslRootCertPath?: string;
+  statementTimeout?: number;
+  connectTimeout?: number;
+  applicationName?: string;
+  options?: string;
+  ssh?: {
+    enabled: boolean;
     host: string;
     port: number;
-    username?: string;
-    password?: string;
-    database?: string;
-    ssh?: {
-        enabled: boolean;
-        host: string;
-        port: number;
-        username: string;
-        privateKeyPath?: string;
-    };
+    username: string;
+    privateKeyPath?: string;
+  };
 }
 
 export class ConnectionFormPanel {
-    public static currentPanel: ConnectionFormPanel | undefined;
-    private readonly _panel: vscode.WebviewPanel;
-    private readonly _extensionUri: vscode.Uri;
-    private _disposables: vscode.Disposable[] = [];
+  public static currentPanel: ConnectionFormPanel | undefined;
+  private readonly _panel: vscode.WebviewPanel;
+  private readonly _extensionUri: vscode.Uri;
+  private _disposables: vscode.Disposable[] = [];
 
-    private constructor(panel: vscode.WebviewPanel, extensionUri: vscode.Uri, private readonly _extensionContext: vscode.ExtensionContext, private readonly _connectionToEdit?: ConnectionInfo) {
-        this._panel = panel;
-        this._extensionUri = extensionUri;
+  private constructor(panel: vscode.WebviewPanel, extensionUri: vscode.Uri, private readonly _extensionContext: vscode.ExtensionContext, private readonly _connectionToEdit?: ConnectionInfo) {
+    this._panel = panel;
+    this._extensionUri = extensionUri;
 
-        this._panel.onDidDispose(() => this.dispose(), null, this._disposables);
-        this._initialize();
+    this._panel.onDidDispose(() => this.dispose(), null, this._disposables);
+    this._initialize();
 
-        this._panel.webview.onDidReceiveMessage(
-            async (message) => {
-                switch (message.command) {
-                    case 'testConnection':
-                        try {
-                            const config: any = {
-                                user: message.connection.username || undefined,
-                                password: message.connection.password || undefined,
-                                database: message.connection.database || 'postgres'
-                            };
+    this._panel.webview.onDidReceiveMessage(
+      async (message) => {
+        switch (message.command) {
+          case 'testConnection':
+            try {
+              const config: any = {
+                user: message.connection.username || undefined,
+                password: message.connection.password || undefined,
+                database: message.connection.database || 'postgres'
+              };
 
-                            if (message.connection.ssh && message.connection.ssh.enabled) {
-                                const stream = await SSHService.getInstance().createStream(
-                                    message.connection.ssh,
-                                    message.connection.host,
-                                    message.connection.port
-                                );
-                                config.stream = stream;
-                            } else {
-                                config.host = message.connection.host;
-                                config.port = message.connection.port;
-                            }
+              if (message.connection.ssh && message.connection.ssh.enabled) {
+                const stream = await SSHService.getInstance().createStream(
+                  message.connection.ssh,
+                  message.connection.host,
+                  message.connection.port
+                );
+                config.stream = stream;
+              } else {
+                config.host = message.connection.host;
+                config.port = message.connection.port;
+              }
 
-                            // First try with specified database
-                            const client = new Client(config);
-                            try {
-                                await client.connect();
-                                const result = await client.query('SELECT version()');
-                                await client.end();
-                                this._panel.webview.postMessage({
-                                    type: 'testSuccess',
-                                    version: result.rows[0].version
-                                });
-                            } catch (err: any) {
-                                if (config.stream) {
-                                    // If using stream, we can't easily fallback without creating a new stream
-                                    // simpler to just throw for now or re-create stream
-                                    throw err;
-                                }
-
-                                // If database doesn't exist, try postgres database
-                                if (err.code === '3D000' && message.connection.database !== 'postgres') {
-                                    const fallbackClient = new Client({
-                                        host: message.connection.host,
-                                        port: message.connection.port,
-                                        user: message.connection.username || undefined,
-                                        password: message.connection.password || undefined,
-                                        database: 'postgres'
-                                    });
-                                    await fallbackClient.connect();
-                                    const result = await fallbackClient.query('SELECT version()');
-                                    await fallbackClient.end();
-                                    this._panel.webview.postMessage({
-                                        type: 'testSuccess',
-                                        version: result.rows[0].version + ' (connected to postgres database)'
-                                    });
-                                } else {
-                                    throw err;
-                                }
-                            }
-                        } catch (err: any) {
-                            this._panel.webview.postMessage({
-                                type: 'testError',
-                                error: err.message
-                            });
-                        }
-                        break;
-
-                    case 'saveConnection':
-                        try {
-                            const config: any = {
-                                user: message.connection.username || undefined,
-                                password: message.connection.password || undefined,
-                                database: 'postgres'
-                            };
-
-                            if (message.connection.ssh && message.connection.ssh.enabled) {
-                                const stream = await SSHService.getInstance().createStream(
-                                    message.connection.ssh,
-                                    message.connection.host,
-                                    message.connection.port
-                                );
-                                config.stream = stream;
-                            } else {
-                                config.host = message.connection.host;
-                                config.port = message.connection.port;
-                            }
-
-                            const client = new Client(config);
-
-                            await client.connect();
-
-                            // Verify we can query
-                            await client.query('SELECT 1');
-                            await client.end();
-
-                            const connections = this.getStoredConnections();
-                            const newConnection: ConnectionInfo = {
-                                id: this._connectionToEdit ? this._connectionToEdit.id : Date.now().toString(),
-                                name: message.connection.name,
-                                host: message.connection.host,
-                                port: message.connection.port,
-                                username: message.connection.username || undefined,
-                                password: message.connection.password || undefined,
-                                database: message.connection.database,
-                                ssh: message.connection.ssh
-                            };
-
-                            if (this._connectionToEdit) {
-                                const index = connections.findIndex(c => c.id === this._connectionToEdit!.id);
-                                if (index !== -1) {
-                                    connections[index] = newConnection;
-                                } else {
-                                    connections.push(newConnection);
-                                }
-                            } else {
-                                connections.push(newConnection);
-                            }
-
-                            await this.storeConnections(connections);
-
-                            vscode.window.showInformationMessage(`Connection ${this._connectionToEdit ? 'updated' : 'saved'} successfully!`);
-                            vscode.commands.executeCommand('postgres-explorer.refreshConnections');
-                            this._panel.dispose();
-                        } catch (err: any) {
-                            const errorMessage = err?.message || 'Unknown error occurred';
-                            vscode.window.showErrorMessage(`Failed to connect: ${errorMessage}`);
-                        }
-                        break;
+              // First try with specified database
+              const client = new Client(config);
+              try {
+                await client.connect();
+                const result = await client.query('SELECT version()');
+                await client.end();
+                this._panel.webview.postMessage({
+                  type: 'testSuccess',
+                  version: result.rows[0].version
+                });
+              } catch (err: any) {
+                if (config.stream) {
+                  // If using stream, we can't easily fallback without creating a new stream
+                  // simpler to just throw for now or re-create stream
+                  throw err;
                 }
-            },
-            undefined,
-            this._disposables
-        );
-    }
 
-    public static show(extensionUri: vscode.Uri, extensionContext: vscode.ExtensionContext, connectionToEdit?: ConnectionInfo) {
-        if (ConnectionFormPanel.currentPanel) {
-            ConnectionFormPanel.currentPanel._panel.reveal();
-            return;
-        }
-
-        const panel = vscode.window.createWebviewPanel(
-            'connectionForm',
-            connectionToEdit ? 'Edit Connection' : 'Add PostgreSQL Connection',
-            vscode.ViewColumn.One,
-            {
-                enableScripts: true
+                // If database doesn't exist, try postgres database
+                if (err.code === '3D000' && message.connection.database !== 'postgres') {
+                  const fallbackClient = new Client({
+                    host: message.connection.host,
+                    port: message.connection.port,
+                    user: message.connection.username || undefined,
+                    password: message.connection.password || undefined,
+                    database: 'postgres'
+                  });
+                  await fallbackClient.connect();
+                  const result = await fallbackClient.query('SELECT version()');
+                  await fallbackClient.end();
+                  this._panel.webview.postMessage({
+                    type: 'testSuccess',
+                    version: result.rows[0].version + ' (connected to postgres database)'
+                  });
+                } else {
+                  throw err;
+                }
+              }
+            } catch (err: any) {
+              this._panel.webview.postMessage({
+                type: 'testError',
+                error: err.message
+              });
             }
-        );
+            break;
 
-        ConnectionFormPanel.currentPanel = new ConnectionFormPanel(panel, extensionUri, extensionContext, connectionToEdit);
-    }
+          case 'saveConnection':
+            try {
+              const config: any = {
+                user: message.connection.username || undefined,
+                password: message.connection.password || undefined,
+                database: 'postgres'
+              };
 
-    private async _initialize() {
-        // The message handler is already set up in the constructor
-        await this._update();
-    }
+              if (message.connection.ssh && message.connection.ssh.enabled) {
+                const stream = await SSHService.getInstance().createStream(
+                  message.connection.ssh,
+                  message.connection.host,
+                  message.connection.port
+                );
+                config.stream = stream;
+              } else {
+                config.host = message.connection.host;
+                config.port = message.connection.port;
+              }
 
-    private async _update() {
-        this._panel.webview.html = await this._getHtmlForWebview(this._panel.webview);
-    }
+              const client = new Client(config);
 
-    private async _getHtmlForWebview(webview: vscode.Webview): Promise<string> {
-        const logoPath = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'resources', 'postgres-vsc-icon.png'));
+              await client.connect();
 
-        let connectionData = null;
-        if (this._connectionToEdit) {
-            // Get the password from secret storage
-            const password = await this._extensionContext.secrets.get(`postgres-password-${this._connectionToEdit.id}`);
-            connectionData = {
-                ...this._connectionToEdit,
-                password
-            };
+              // Verify we can query
+              await client.query('SELECT 1');
+              await client.end();
+
+              const connections = this.getStoredConnections();
+              const newConnection: ConnectionInfo = {
+                id: this._connectionToEdit ? this._connectionToEdit.id : Date.now().toString(),
+                name: message.connection.name,
+                host: message.connection.host,
+                port: message.connection.port,
+                username: message.connection.username || undefined,
+                password: message.connection.password || undefined,
+                database: message.connection.database,
+                // Advanced options
+                sslmode: message.connection.sslmode || undefined,
+                sslCertPath: message.connection.sslCertPath || undefined,
+                sslKeyPath: message.connection.sslKeyPath || undefined,
+                sslRootCertPath: message.connection.sslRootCertPath || undefined,
+                statementTimeout: message.connection.statementTimeout || undefined,
+                connectTimeout: message.connection.connectTimeout || undefined,
+                applicationName: message.connection.applicationName || undefined,
+                options: message.connection.options || undefined,
+                ssh: message.connection.ssh
+              };
+
+              if (this._connectionToEdit) {
+                const index = connections.findIndex(c => c.id === this._connectionToEdit!.id);
+                if (index !== -1) {
+                  connections[index] = newConnection;
+                } else {
+                  connections.push(newConnection);
+                }
+              } else {
+                connections.push(newConnection);
+              }
+
+              await this.storeConnections(connections);
+
+              vscode.window.showInformationMessage(`Connection ${this._connectionToEdit ? 'updated' : 'saved'} successfully!`);
+              vscode.commands.executeCommand('postgres-explorer.refreshConnections');
+              this._panel.dispose();
+            } catch (err: any) {
+              const errorMessage = err?.message || 'Unknown error occurred';
+              vscode.window.showErrorMessage(`Failed to connect: ${errorMessage}`);
+            }
+            break;
         }
+      },
+      undefined,
+      this._disposables
+    );
+  }
 
-        return `<!DOCTYPE html>
+  public static show(extensionUri: vscode.Uri, extensionContext: vscode.ExtensionContext, connectionToEdit?: ConnectionInfo) {
+    if (ConnectionFormPanel.currentPanel) {
+      ConnectionFormPanel.currentPanel._panel.reveal();
+      return;
+    }
+
+    const panel = vscode.window.createWebviewPanel(
+      'connectionForm',
+      connectionToEdit ? 'Edit Connection' : 'Add PostgreSQL Connection',
+      vscode.ViewColumn.One,
+      {
+        enableScripts: true
+      }
+    );
+
+    ConnectionFormPanel.currentPanel = new ConnectionFormPanel(panel, extensionUri, extensionContext, connectionToEdit);
+  }
+
+  private async _initialize() {
+    // The message handler is already set up in the constructor
+    await this._update();
+  }
+
+  private async _update() {
+    this._panel.webview.html = await this._getHtmlForWebview(this._panel.webview);
+  }
+
+  private async _getHtmlForWebview(webview: vscode.Webview): Promise<string> {
+    const logoPath = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'resources', 'postgres-vsc-icon.png'));
+
+    let connectionData = null;
+    if (this._connectionToEdit) {
+      // Get the password from secret storage
+      const password = await this._extensionContext.secrets.get(`postgres-password-${this._connectionToEdit.id}`);
+      connectionData = {
+        ...this._connectionToEdit,
+        password
+      };
+    }
+
+    return `<!DOCTYPE html>
         <html lang="en">
         <head>
             <meta charset="UTF-8">
@@ -659,6 +677,96 @@ export class ConnectionFormPanel {
                                             <input type="text" id="sshKeyPath" name="sshKeyPath" placeholder="/home/user/.ssh/id_rsa">
                                         </div>
                                     </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Advanced Options (Collapsible) -->
+                        <div style="margin-top: 32px; border-top: 1px solid var(--border-color); padding-top: 24px;">
+                            <div class="section-header" style="cursor: pointer;" onclick="toggleAdvanced()">
+                                <div class="section-icon">⚙️</div>
+                                <div class="section-title">Advanced Options</div>
+                                <span id="advanced-arrow" style="margin-left: auto; transition: transform 0.2s;">▼</span>
+                            </div>
+
+                            <div id="advanced-section" style="display: none;">
+                                <div class="form-grid">
+                                    <div class="form-group">
+                                        <label for="sslmode">
+                                            SSL Mode
+                                            <span class="label-hint">Connection security level</span>
+                                        </label>
+                                        <select id="sslmode" name="sslmode" style="width: 100%; padding: 10px 14px; background: var(--input-bg); color: var(--input-fg); border: 1.5px solid var(--input-border); border-radius: 6px; font-family: var(--font-family); font-size: 13px;">
+                                            <option value="">Default (prefer)</option>
+                                            <option value="disable">Disable - No SSL</option>
+                                            <option value="allow">Allow - Try non-SSL first</option>
+                                            <option value="prefer">Prefer - Try SSL first</option>
+                                            <option value="require">Require - SSL required</option>
+                                            <option value="verify-ca">Verify CA - Verify server cert</option>
+                                            <option value="verify-full">Verify Full - Verify server + hostname</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="applicationName">
+                                            Application Name
+                                            <span class="label-hint">Shown in pg_stat_activity</span>
+                                        </label>
+                                        <input type="text" id="applicationName" name="applicationName" placeholder="PgStudio">
+                                    </div>
+                                </div>
+
+                                <div id="ssl-cert-fields" style="display: none;">
+                                    <div class="info-badge" style="margin-bottom: 16px;">
+                                        <span>🔐</span>
+                                        <span>SSL certificate paths required for verify-ca/verify-full modes</span>
+                                    </div>
+                                    <div class="form-grid">
+                                        <div class="form-group full-width">
+                                            <label for="sslRootCertPath">
+                                                CA Certificate Path
+                                                <span class="label-hint">Root CA certificate for server verification</span>
+                                            </label>
+                                            <input type="text" id="sslRootCertPath" name="sslRootCertPath" placeholder="/path/to/ca-certificate.crt">
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="sslCertPath">
+                                                Client Certificate Path
+                                                <span class="label-hint">Optional client certificate</span>
+                                            </label>
+                                            <input type="text" id="sslCertPath" name="sslCertPath" placeholder="/path/to/client-cert.crt">
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="sslKeyPath">
+                                                Client Key Path
+                                                <span class="label-hint">Optional client private key</span>
+                                            </label>
+                                            <input type="text" id="sslKeyPath" name="sslKeyPath" placeholder="/path/to/client-key.key">
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="form-grid">
+                                    <div class="form-group">
+                                        <label for="connectTimeout">
+                                            Connection Timeout
+                                            <span class="label-hint">Seconds (default: 5)</span>
+                                        </label>
+                                        <input type="number" id="connectTimeout" name="connectTimeout" placeholder="5" min="1" max="300">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="statementTimeout">
+                                            Statement Timeout
+                                            <span class="label-hint">Milliseconds (0 = no limit)</span>
+                                        </label>
+                                        <input type="number" id="statementTimeout" name="statementTimeout" placeholder="0" min="0">
+                                    </div>
+                                </div>
+
+                                <div class="form-group" style="margin-top: 16px;">
+                                    <label for="options">
+                                        Additional Options
+                                        <span class="label-hint">Raw connection parameters (e.g., -c search_path=myschema)</span>
+                                    </label>
+                                    <input type="text" id="options" name="options" placeholder="-c search_path=public">
                                 </div>
                             </div>
                         </div>
@@ -684,6 +792,45 @@ export class ConnectionFormPanel {
                     document.getElementById('database').value = connectionData.database || '';
                     document.getElementById('username').value = connectionData.username || '';
                     document.getElementById('password').value = connectionData.password || '';
+                    
+                    // Populate advanced options
+                    if (connectionData.sslmode) {
+                        document.getElementById('sslmode').value = connectionData.sslmode;
+                    }
+                    if (connectionData.sslCertPath) {
+                        document.getElementById('sslCertPath').value = connectionData.sslCertPath;
+                    }
+                    if (connectionData.sslKeyPath) {
+                        document.getElementById('sslKeyPath').value = connectionData.sslKeyPath;
+                    }
+                    if (connectionData.sslRootCertPath) {
+                        document.getElementById('sslRootCertPath').value = connectionData.sslRootCertPath;
+                    }
+                    if (connectionData.statementTimeout) {
+                        document.getElementById('statementTimeout').value = connectionData.statementTimeout;
+                    }
+                    if (connectionData.connectTimeout) {
+                        document.getElementById('connectTimeout').value = connectionData.connectTimeout;
+                    }
+                    if (connectionData.applicationName) {
+                        document.getElementById('applicationName').value = connectionData.applicationName;
+                    }
+                    if (connectionData.options) {
+                        document.getElementById('options').value = connectionData.options;
+                    }
+                    
+                    // Show advanced section if any advanced options are set
+                    const hasAdvancedOptions = connectionData.sslmode || connectionData.statementTimeout || 
+                        connectionData.connectTimeout || connectionData.applicationName || connectionData.options;
+                    if (hasAdvancedOptions) {
+                        setTimeout(() => {
+                            const advSection = document.getElementById('advanced-section');
+                            const advArrow = document.getElementById('advanced-arrow');
+                            advSection.style.display = 'block';
+                            advArrow.style.transform = 'rotate(180deg)';
+                            updateSSLCertFields();
+                        }, 100);
+                    }
                     
                     if (connectionData.ssh) {
                         document.getElementById('sshEnabled').checked = connectionData.ssh.enabled;
@@ -735,6 +882,34 @@ export class ConnectionFormPanel {
 
                 document.getElementById('sshEnabled').addEventListener('change', updateSSHState);
 
+                // Advanced Options toggle
+                function toggleAdvanced() {
+                    const section = document.getElementById('advanced-section');
+                    const arrow = document.getElementById('advanced-arrow');
+                    if (section.style.display === 'none') {
+                        section.style.display = 'block';
+                        arrow.style.transform = 'rotate(180deg)';
+                    } else {
+                        section.style.display = 'none';
+                        arrow.style.transform = 'rotate(0deg)';
+                    }
+                }
+
+                // SSL mode change handler - show cert fields for verify modes
+                function updateSSLCertFields() {
+                    const sslmode = document.getElementById('sslmode').value;
+                    const certFields = document.getElementById('ssl-cert-fields');
+                    if (sslmode === 'verify-ca' || sslmode === 'verify-full') {
+                        certFields.style.display = 'block';
+                        document.getElementById('sslRootCertPath').required = true;
+                    } else {
+                        certFields.style.display = 'none';
+                        document.getElementById('sslRootCertPath').required = false;
+                    }
+                }
+
+                document.getElementById('sslmode').addEventListener('change', updateSSLCertFields);
+
                 let isTested = false;
 
                 function showMessage(text, type = 'info') {
@@ -763,7 +938,16 @@ export class ConnectionFormPanel {
                         port: parseInt(document.getElementById('port').value),
                         database: document.getElementById('database').value || 'postgres',
                         username: usernameInput || undefined,
-                        password: passwordInput || undefined
+                        password: passwordInput || undefined,
+                        // Advanced options
+                        sslmode: document.getElementById('sslmode').value || undefined,
+                        sslCertPath: document.getElementById('sslCertPath').value || undefined,
+                        sslKeyPath: document.getElementById('sslKeyPath').value || undefined,
+                        sslRootCertPath: document.getElementById('sslRootCertPath').value || undefined,
+                        statementTimeout: document.getElementById('statementTimeout').value ? parseInt(document.getElementById('statementTimeout').value) : undefined,
+                        connectTimeout: document.getElementById('connectTimeout').value ? parseInt(document.getElementById('connectTimeout').value) : undefined,
+                        applicationName: document.getElementById('applicationName').value || undefined,
+                        options: document.getElementById('options').value || undefined
                     };
 
                     if (sshEnabled) {
@@ -846,54 +1030,54 @@ export class ConnectionFormPanel {
             </script>
         </body>
         </html>`;
-    }
+  }
 
-    private _getNonce(): string {
-        let text = '';
-        const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-        for (let i = 0; i < 32; i++) {
-            text += possible.charAt(Math.floor(Math.random() * possible.length));
+  private _getNonce(): string {
+    let text = '';
+    const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    for (let i = 0; i < 32; i++) {
+      text += possible.charAt(Math.floor(Math.random() * possible.length));
+    }
+    return text;
+  }
+
+  private getStoredConnections(): ConnectionInfo[] {
+    const connections = vscode.workspace.getConfiguration().get<ConnectionInfo[]>('postgresExplorer.connections') || [];
+    return connections;
+  }
+
+  private async storeConnections(connections: ConnectionInfo[]): Promise<void> {
+    try {
+      // First store the connections without passwords in settings
+      const connectionsForSettings = connections.map(({ password, ...connWithoutPassword }) => connWithoutPassword);
+      await vscode.workspace.getConfiguration().update('postgresExplorer.connections', connectionsForSettings, vscode.ConfigurationTarget.Global);
+
+      // Then store passwords in SecretStorage
+      const secretsStorage = this._extensionContext.secrets;
+      for (const conn of connections) {
+        if (conn.password) {
+          // Removed logging of sensitive connection information for security.
+          await secretsStorage.store(`postgres-password-${conn.id}`, conn.password);
         }
-        return text;
+      }
+    } catch (error) {
+      console.error('Failed to store connections:', error);
+      // If anything fails, make sure we don't leave passwords in settings
+      const existingConnections = vscode.workspace.getConfiguration().get<any[]>('postgresExplorer.connections') || [];
+      const sanitizedConnections = existingConnections.map(({ password, ...connWithoutPassword }) => connWithoutPassword);
+      await vscode.workspace.getConfiguration().update('postgresExplorer.connections', sanitizedConnections, vscode.ConfigurationTarget.Global);
+      throw error;
     }
+  }
 
-    private getStoredConnections(): ConnectionInfo[] {
-        const connections = vscode.workspace.getConfiguration().get<ConnectionInfo[]>('postgresExplorer.connections') || [];
-        return connections;
+  private dispose() {
+    ConnectionFormPanel.currentPanel = undefined;
+    this._panel.dispose();
+    while (this._disposables.length) {
+      const disposable = this._disposables.pop();
+      if (disposable) {
+        disposable.dispose();
+      }
     }
-
-    private async storeConnections(connections: ConnectionInfo[]): Promise<void> {
-        try {
-            // First store the connections without passwords in settings
-            const connectionsForSettings = connections.map(({ password, ...connWithoutPassword }) => connWithoutPassword);
-            await vscode.workspace.getConfiguration().update('postgresExplorer.connections', connectionsForSettings, vscode.ConfigurationTarget.Global);
-
-            // Then store passwords in SecretStorage
-            const secretsStorage = this._extensionContext.secrets;
-            for (const conn of connections) {
-                if (conn.password) {
-                    // Removed logging of sensitive connection information for security.
-                    await secretsStorage.store(`postgres-password-${conn.id}`, conn.password);
-                }
-            }
-        } catch (error) {
-            console.error('Failed to store connections:', error);
-            // If anything fails, make sure we don't leave passwords in settings
-            const existingConnections = vscode.workspace.getConfiguration().get<any[]>('postgresExplorer.connections') || [];
-            const sanitizedConnections = existingConnections.map(({ password, ...connWithoutPassword }) => connWithoutPassword);
-            await vscode.workspace.getConfiguration().update('postgresExplorer.connections', sanitizedConnections, vscode.ConfigurationTarget.Global);
-            throw error;
-        }
-    }
-
-    private dispose() {
-        ConnectionFormPanel.currentPanel = undefined;
-        this._panel.dispose();
-        while (this._disposables.length) {
-            const disposable = this._disposables.pop();
-            if (disposable) {
-                disposable.dispose();
-            }
-        }
-    }
+  }
 }

@@ -41,7 +41,7 @@
 - 🌳 **Database Explorer** — Browse tables, views, functions, types, FDWs
 - 🛠️ **Object Operations** — CRUD, scripts, VACUUM, ANALYZE, REINDEX
 - 🌍 **Foreign Data Wrappers** — Manage foreign servers, user mappings & tables
-- 🤖 **AI-Powered** — GitHub Copilot, OpenAI, Anthropic, Gemini
+- 🤖 **AI-Powered** — Generate, Optimize, Explain & Analyze (OpenAI, Anthropic, Gemini)
 - 📤 **Export Data** — Export results to CSV, JSON, or Excel
 
 ---
@@ -135,16 +135,31 @@ yape/
 
 PgStudio integrates advanced AI capabilities directly into your workflow, but keeps **YOU** in control.
 
-### Chat to Query (Natural Language → SQL)
-Describe what you need in plain English, and PgStudio will generate the SQL for you.
-- **Context-Aware**: The AI understands your table schemas and columns.
-- **Smart Suggestions**: Ask for "top selling products" and it knows to join `orders` and `products`.
+### 🪄 Generate Query (Natural Language → SQL)
+Describe what you need in plain English (e.g., "Show me top 10 users by order count"), and PgStudio will generate the SQL for you using your schema context.
+- **Command Palette**: `AI: Generate Query`
+- **Context-Aware**: The AI understands your table schemas, columns, and relationships.
+
+### ⚡ Performance Optimization
+Click the **Optimize** button on any successful query result.
+- **Explain Scripts**: Generates `EXPLAIN ANALYZE` commands for deeper profiling.
+- **Static Analysis**: Suggests missing indexes, query rewrites, or schema improvements.
+
+### 📊 Data Analysis
+Click the **Analyze Data** button in result tables.
+- **Clean Workflow**: Automatically exports data to a temporary CSV and attaches it to the chat.
+- **Actionable Insights**: AI summarizes patterns, trends, and outliers in your result sets.
+
+### ✨ Error Handling (Explain & Fix)
+When a query fails, get instant help directly in the error cell.
+- **Explain Error**: Translates cryptic Postgres errors into plain English.
+- **Fix Query**: Suggests corrected SQL to resolve the error.
 
 ### 🛡️ Safe Execution Model (Notebook-First)
 We believe AI should assist, not take over. **No query is ever executed automatically.**
-1. **Ask**: You ask a question in the side panel.
-2. **Review**: The AI generates SQL code.
-3. **Insert**: You click "Open in Notebook" to place the code into a cell.
+1. **Ask/Trigger**: You use one of the AI features.
+2. **Review**: The AI generates SQL or suggestions in the chat.
+3. **Insert**: You click "Open in Notebook" to place code into a cell.
 4. **Execute**: You review the code and click "Run" when you are ready.
 
 ---
@@ -277,3 +292,84 @@ npx ovsx publish
 Also on [Open VSX](https://open-vsx.org/extension/ric-v/postgres-explorer)
 
 </div>
+
+---
+
+## ???? Troubleshooting
+
+### Connection Issues
+
+#### SSL Connection Failures
+**Problem**: `SSL connection failed` or `certificate verify failed`
+
+**Solutions**:
+- Disable SSL (development only): Set SSL Mode to `disable`
+- Use `prefer` mode (tries SSL, falls back to non-SSL)
+- Provide CA certificate: SSL Mode `verify-ca` + CA Certificate path
+
+#### Connection Timeout
+**Problem**: `Connection timeout` or `ETIMEDOUT`
+
+**Solutions**:
+- Increase connection timeout in settings
+- Check firewall rules
+- Verify PostgreSQL `pg_hba.conf` allows remote connections
+- Ensure PostgreSQL is listening on correct interface
+
+#### SSH Tunnel Issues
+**Problem**: `SSH tunnel failed to establish`
+
+**Solutions**:
+- Verify SSH credentials and host
+- Test SSH connection manually: `ssh user@host -p port`
+- Check SSH key permissions: `chmod 600 ~/.ssh/id_rsa`
+- Ensure SSH server allows port forwarding
+
+### Performance Issues
+
+#### Large Result Sets
+**Problem**: Querying large tables causes freezes
+
+**Solution**: Results are automatically limited to 10,000 rows. Use `LIMIT` clause for specific row counts.
+
+#### Slow Tree View
+**Problem**: Database tree takes long to load
+
+**Solutions**:
+- Use search filter to narrow objects
+- Collapse unused schemas
+- Disable object count badges in settings
+
+### Common Error Messages
+
+| Error | Cause | Solution |
+|-------|-------|----------|
+| `password authentication failed` | Wrong credentials | Verify username/password |
+| `database does not exist` | Database name typo | Check database name |
+| `permission denied` | Insufficient privileges | Grant SELECT permission |
+| `too many connections` | Pool exhausted | Close unused connections |
+| `no pg_hba.conf entry` | Access control | Add entry to `pg_hba.conf` |
+
+---
+
+## 🙈 Feature Comparison
+
+| Feature | PgStudio | pgAdmin | DBeaver | TablePlus |
+|---------|----------|---------|---------|-----------|
+| **VS Code Integration** | ✅ Native | ❌ | ❌ | ❌ |
+| **SQL Notebooks** | ✅ Interactive | ❌ | ❌ | ❌ |
+| **AI Assistant** | ✅ Built-in | ❌ | ❌ | ❌ |
+| **Real-time Dashboard** | ✅ | ✅ | ⚠️ Limited | ⚠️ Limited |
+| **Inline Cell Editing** | ✅ | ✅ | ✅ | ✅ |
+| **Export Formats** | CSV, JSON, Excel | CSV, JSON | CSV, JSON, Excel | CSV, JSON, SQL |
+| **SSH Tunneling** | ✅ | ✅ | ✅ | ✅ |
+| **Foreign Data Wrappers** | ✅ Full | ✅ | ⚠️ Limited | ❌ |
+| **License** | MIT (Free) | PostgreSQL (Free) | Apache 2.0 (Free) | Proprietary (Paid) |
+
+### Unique to PgStudio
+- 🤖 AI-powered query generation and optimization
+- 📓 Interactive SQL notebooks with persistent state
+- 🔄 Infinite scrolling for large result sets (10k rows)
+- 🎨 Modern UI integrated into VS Code
+- 🚀 Hybrid connection pooling for performance
+

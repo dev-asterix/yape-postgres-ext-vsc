@@ -5,125 +5,136 @@ import { SecretStorageService } from '../../services/SecretStorageService';
 import { Client } from 'pg';
 
 describe('ConnectionManager', () => {
-    let sandbox: sinon.SinonSandbox;
-    let secretStorageStub: sinon.SinonStubbedInstance<SecretStorageService>;
+  let sandbox: sinon.SinonSandbox;
+  let secretStorageStub: sinon.SinonStubbedInstance<SecretStorageService>;
 
-    beforeEach(() => {
-        sandbox = sinon.createSandbox();
-        // Mock SecretStorageService
-        secretStorageStub = sandbox.createStubInstance(SecretStorageService);
-        (SecretStorageService as any).instance = secretStorageStub;
-        sandbox.stub(SecretStorageService, 'getInstance').returns(secretStorageStub as any);
-    });
+  beforeEach(() => {
+    sandbox = sinon.createSandbox();
+    // Mock SecretStorageService
+    secretStorageStub = sandbox.createStubInstance(SecretStorageService);
+    (SecretStorageService as any).instance = secretStorageStub;
+    sandbox.stub(SecretStorageService, 'getInstance').returns(secretStorageStub as any);
+  });
 
-    afterEach(() => {
-        sandbox.restore();
-        // Reset singleton instance
-        (ConnectionManager as any).instance = undefined;
-    });
+  afterEach(() => {
+    sandbox.restore();
+    // Reset singleton instance
+    (ConnectionManager as any).instance = undefined;
+  });
 
-    it('should be a singleton', () => {
-        const instance1 = ConnectionManager.getInstance();
-        const instance2 = ConnectionManager.getInstance();
-        expect(instance1).to.equal(instance2);
-    });
+  it('should be a singleton', () => {
+    const instance1 = ConnectionManager.getInstance();
+    const instance2 = ConnectionManager.getInstance();
+    expect(instance1).to.equal(instance2);
+  });
 
-    it('should create a new connection if one does not exist', async () => {
-        const manager = ConnectionManager.getInstance();
-        const config = {
-            id: 'test-id',
-            host: 'localhost',
-            port: 5432,
-            username: 'user',
-            database: 'testdb',
-            name: 'Test DB'
-        };
+  it('should create a new pool and client if one does not exist', async () => {
+    const manager = ConnectionManager.getInstance();
+    const config = {
+      id: 'test-id',
+      host: 'localhost',
+      port: 5432,
+      username: 'user',
+      database: 'testdb',
+      name: 'Test DB'
+    };
 
-        const clientStub = {
-            connect: sandbox.stub().resolves(),
-            on: sandbox.stub(),
-            end: sandbox.stub().resolves()
-        };
+    const poolClientStub = {
+      release: sandbox.stub(),
+      query: sandbox.stub()
+    };
 
-        // Mock pg.Client constructor
-        const pgClientStub = sandbox.stub(require('pg'), 'Client').returns(clientStub);
+    const poolStub = {
+      connect: sandbox.stub().resolves(poolClientStub),
+      on: sandbox.stub(),
+      end: sandbox.stub().resolves()
+    };
 
-        const client = await manager.getConnection(config);
+    // Mock pg.Pool constructor
+    const pgPoolStub = sandbox.stub(require('pg'), 'Pool').returns(poolStub);
 
-        expect(pgClientStub.calledOnce).to.be.true;
-        expect(clientStub.connect.calledOnce).to.be.true;
-        expect(client).to.equal(clientStub);
-    });
+    const client = await manager.getPooledClient(config);
 
-    it('should reuse existing connection', async () => {
-        const manager = ConnectionManager.getInstance();
-        const config = {
-            id: 'test-id',
-            host: 'localhost',
-            port: 5432,
-            username: 'user',
-            database: 'testdb',
-            name: 'Test DB'
-        };
+    expect(pgPoolStub.calledOnce).to.be.true;
+    expect(poolStub.connect.calledOnce).to.be.true;
+    expect(client).to.equal(poolClientStub);
+  });
 
-        const clientStub = {
-            connect: sandbox.stub().resolves(),
-            on: sandbox.stub(),
-            end: sandbox.stub().resolves()
-        };
+  it('should reuse existing pool', async () => {
+    const manager = ConnectionManager.getInstance();
+    const config = {
+      id: 'test-id',
+      host: 'localhost',
+      port: 5432,
+      username: 'user',
+      database: 'testdb',
+      name: 'Test DB'
+    };
 
-        sandbox.stub(require('pg'), 'Client').returns(clientStub);
+    const poolClientStub = {
+      release: sandbox.stub(),
+      query: sandbox.stub()
+    };
 
-        const client1 = await manager.getConnection(config);
-        const client2 = await manager.getConnection(config);
+    const poolStub = {
+      connect: sandbox.stub().resolves(poolClientStub),
+      on: sandbox.stub(),
+      end: sandbox.stub().resolves()
+    };
 
-        expect(client1).to.equal(client2);
-        // Should only be called once
-        expect(clientStub.connect.calledOnce).to.be.true;
-    });
+    const pgPoolStub = sandbox.stub(require('pg'), 'Pool').returns(poolStub);
 
-    it('should close connection', async () => {
-        const manager = ConnectionManager.getInstance();
-        const config = {
-            id: 'test-id',
-            host: 'localhost',
-            port: 5432,
-            username: 'user',
-            database: 'testdb',
-            name: 'Test DB'
-        };
+    await manager.getPooledClient(config);
+    await manager.getPooledClient(config);
 
-        const clientStub = {
-            connect: sandbox.stub().resolves(),
-            on: sandbox.stub(),
-            end: sandbox.stub().resolves()
-        };
+    // Pool constructor should only be called once
+    expect(pgPoolStub.calledOnce).to.be.true;
+    // Connect should be called twice (once for each request)
+    expect(poolStub.connect.calledTwice).to.be.true;
+  });
 
-        sandbox.stub(require('pg'), 'Client').returns(clientStub);
+  it('should close connection (pool)', async () => {
+    const manager = ConnectionManager.getInstance();
+    const config = {
+      id: 'test-id',
+      host: 'localhost',
+      port: 5432,
+      username: 'user',
+      database: 'testdb',
+      name: 'Test DB'
+    };
 
-        await manager.getConnection(config);
-        await manager.closeConnection(config);
+    const poolStub = {
+      connect: sandbox.stub().resolves({ release: sandbox.stub() }),
+      on: sandbox.stub(),
+      end: sandbox.stub().resolves()
+    };
 
-        expect(clientStub.end.calledOnce).to.be.true;
-    });
+    sandbox.stub(require('pg'), 'Pool').returns(poolStub);
 
-    it('should close all connections', async () => {
-        const manager = ConnectionManager.getInstance();
-        const config1 = { id: '1', host: 'h', port: 1, username: 'u', database: 'd1', name: 'n' };
-        const config2 = { id: '2', host: 'h', port: 1, username: 'u', database: 'd2', name: 'n' };
+    await manager.getPooledClient(config);
+    await manager.closeConnection(config);
 
-        const clientStub1 = { connect: sandbox.stub().resolves(), on: sandbox.stub(), end: sandbox.stub().resolves() };
-        const clientStub2 = { connect: sandbox.stub().resolves(), on: sandbox.stub(), end: sandbox.stub().resolves() };
+    expect(poolStub.end.calledOnce).to.be.true;
+  });
 
-        const pgClientStub = sandbox.stub(require('pg'), 'Client');
-        pgClientStub.onCall(0).returns(clientStub1);
-        pgClientStub.onCall(1).returns(clientStub2);
+  it('should close all connections', async () => {
+    const manager = ConnectionManager.getInstance();
+    const config1 = { id: '1', host: 'h', port: 1, username: 'u', database: 'd1', name: 'n' };
+    const config2 = { id: '2', host: 'h', port: 1, username: 'u', database: 'd2', name: 'n' };
 
-        await manager.getConnection(config1);
-        await manager.getConnection(config2);
-        await manager.closeAll();
+    const poolStub1 = { connect: sandbox.stub().resolves({ release: sandbox.stub() }), on: sandbox.stub(), end: sandbox.stub().resolves() };
+    const poolStub2 = { connect: sandbox.stub().resolves({ release: sandbox.stub() }), on: sandbox.stub(), end: sandbox.stub().resolves() };
 
-        expect(clientStub1.end.calledOnce).to.be.true;
-        expect(clientStub2.end.calledOnce).to.be.true;
-    });
+    const pgPoolStub = sandbox.stub(require('pg'), 'Pool');
+    pgPoolStub.onCall(0).returns(poolStub1);
+    pgPoolStub.onCall(1).returns(poolStub2);
+
+    await manager.getPooledClient(config1);
+    await manager.getPooledClient(config2);
+    await manager.closeAll();
+
+    expect(poolStub1.end.calledOnce).to.be.true;
+    expect(poolStub2.end.calledOnce).to.be.true;
+  });
 });

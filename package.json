@@ -62,6 +62,26 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "postgres-explorer.filterTree",
+        "title": "Filter Tree",
+        "icon": "$(filter)"
+      },
+      {
+        "command": "postgres-explorer.clearFilter",
+        "title": "Clear Filter",
+        "icon": "$(search-remove)"
+      },
+      {
+        "command": "postgres-explorer.addToFavorites",
+        "title": "Add to Favorites",
+        "icon": "$(star-empty)"
+      },
+      {
+        "command": "postgres-explorer.removeFromFavorites",
+        "title": "Remove from Favorites",
+        "icon": "$(star-full)"
+      },
+      {
         "command": "postgres-explorer.manageConnections",
         "title": "Manage Connections",
         "icon": "$(settings-gear)"
@@ -80,6 +100,16 @@
         "command": "postgres-explorer.newNotebook",
         "title": "New PostgreSQL Notebook",
         "icon": "$(new-file)"
+      },
+      {
+        "command": "postgres-explorer.generateQuery",
+        "title": "AI: Generate Query",
+        "category": "PgStudio"
+      },
+      {
+        "command": "postgres-explorer.optimizeQuery",
+        "title": "AI: Optimize Query",
+        "category": "PgStudio"
       },
       {
         "command": "postgres-explorer.connect",
@@ -909,6 +939,21 @@
           "type": "string",
           "default": "",
           "description": "Custom API endpoint (optional)"
+        },
+        "postgresExplorer.streaming.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable cursor-based streaming for large result sets"
+        },
+        "postgresExplorer.streaming.batchSize": {
+          "type": "number",
+          "default": 200,
+          "description": "Number of rows per batch when streaming results"
+        },
+        "postgresExplorer.telemetry.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable performance telemetry (opt-in, privacy-first)"
         }
       }
     },
@@ -929,6 +974,16 @@
         {
           "command": "postgres-explorer.addConnection",
           "when": "view == postgresExplorer",
+          "group": "navigation"
+        },
+        {
+          "command": "postgres-explorer.filterTree",
+          "when": "view == postgresExplorer && !postgresExplorer.filterActive",
+          "group": "navigation"
+        },
+        {
+          "command": "postgres-explorer.clearFilter",
+          "when": "view == postgresExplorer && postgresExplorer.filterActive",
           "group": "navigation"
         },
         {
@@ -962,6 +1017,16 @@
           "command": "postgres-explorer.deleteConnection",
           "when": "view == postgresExplorer && viewItem == connection",
           "group": "9_delete"
+        },
+        {
+          "command": "postgres-explorer.addToFavorites",
+          "when": "view == postgresExplorer && viewItem =~ /^(table|view|function|materialized-view)$/ && !postgresExplorer.isFavorite",
+          "group": "0_favorites"
+        },
+        {
+          "command": "postgres-explorer.removeFromFavorites",
+          "when": "view == postgresExplorer && viewItem =~ /^(table|view|function|materialized-view)$/ && postgresExplorer.isFavorite",
+          "group": "0_favorites"
         },
         {
           "command": "postgres-explorer.disconnectConnection",
@@ -1603,9 +1668,11 @@
     "coverage": "nyc npm run test"
   },
   "dependencies": {
+    "@types/pg-cursor": "^2.7.2",
     "chart.js": "^4.5.1",
     "esbuild": ">=0.25.0",
     "pg": "^8.11.3",
+    "pg-cursor": "^2.15.3",
     "ssh2": "^1.15.0"
   },
   "devDependencies": {
@@ -1614,8 +1681,8 @@
     "@types/module-alias": "^2.0.4",
     "@types/node": "^16.18.126",
     "@types/pg": "^8.11.11",
-    "@types/ssh2": "^1.15.0",
     "@types/sinon": "^21.0.0",
+    "@types/ssh2": "^1.15.0",
     "@types/vscode": "^1.80.0",
     "@types/vscode-notebook-renderer": "^1.72.4",
     "chai": "^6.2.1",

@@ -2,14 +2,14 @@ import * as vscode from 'vscode';
 
 import { DatabaseTreeItem, DatabaseTreeProvider } from '../providers/DatabaseTreeProvider';
 import {
-    MarkdownUtils,
-    FormatHelpers,
-    ErrorHandlers,
-    SQL_TEMPLATES,
-    ObjectUtils,
-    getDatabaseConnection,
-    NotebookBuilder,
-    QueryBuilder
+  MarkdownUtils,
+  FormatHelpers,
+  ErrorHandlers,
+  SQL_TEMPLATES,
+  ObjectUtils,
+  getDatabaseConnection,
+  NotebookBuilder,
+  QueryBuilder
 } from './helper';
 import { FunctionSQL } from './sql';
 
@@ -25,45 +25,53 @@ import { FunctionSQL } from './sql';
  * @param {vscode.ExtensionContext} context - The extension context.
  */
 export async function cmdFunctionOperations(item: DatabaseTreeItem, context: vscode.ExtensionContext) {
-    try {
-        const { connection, client, metadata } = await getDatabaseConnection(item);
+  let dbConn;
+  try {
+    dbConn = await getDatabaseConnection(item);
+    const { client, metadata } = dbConn;
 
-        try {
-            const functionResult = await client.query(QueryBuilder.functionInfo(item.schema!, item.label));
-            if (functionResult.rows.length === 0) {
-                throw new Error('Function not found');
-            }
 
-            const functionInfo = functionResult.rows[0];
-
-            await new NotebookBuilder(metadata)
-                .addMarkdown(
-                    MarkdownUtils.header(`⚡ Function Operations: \`${item.schema}.${item.label}\``) +
-                    (functionInfo.description ? MarkdownUtils.infoBox(`<strong>Description:</strong> ${functionInfo.description}`) : '') +
-                    MarkdownUtils.infoBox('This notebook contains common operations for the PostgreSQL function. Run the cells below to execute the operations.') +
-                    `\n\n#### 🎯 Available Operations\n\n` +
-                    MarkdownUtils.operationsTable([
-                        { operation: '📝 View Definition', description: 'Show the current function code' },
-                        { operation: '📞 Call Function', description: 'Template for executing the function' },
-                        { operation: '❌ Drop', description: 'Delete the function (Warning: Irreversible)' }
-                    ])
-                )
-                .addMarkdown('##### 📝 Function Definition')
-                .addSql(`-- Current function definition\n${functionInfo.definition} `)
-                .addMarkdown('##### 📞 Call Function')
-                .addSql(`-- Call function\nSELECT ${item.schema}.${item.label} (${functionInfo.arguments ?
-                    '\n  -- Replace with actual values:\n  ' + functionInfo.arguments.split(',').join(',\n  ')
-                    : ''
-                    }); `)
-                .addMarkdown('##### ❌ Drop Function')
-                .addSql(SQL_TEMPLATES.DROP.FUNCTION(item.schema!, item.label, functionInfo.arguments || ''))
-                .show();
-        } finally {
-            // Do not close shared client
-        }
-    } catch (err: any) {
-        await ErrorHandlers.handleCommandError(err, 'create function operations notebook');
+    const functionResult = await client.query(QueryBuilder.functionInfo(item.schema!, item.label));
+    if (functionResult.rows.length === 0) {
+      throw new Error('Function not found');
     }
+
+    const functionInfo = functionResult.rows[0];
+
+    await new NotebookBuilder(metadata)
+      .addMarkdown(
+        MarkdownUtils.header(`⚡ Function Operations: \`${item.schema}.${item.label}\``) +
+        (functionInfo.description ? MarkdownUtils.infoBox(`<strong>Description:</strong> ${functionInfo.description}`) : '') +
+        MarkdownUtils.infoBox('This notebook contains common operations for the PostgreSQL function. Run the cells below to execute the operations.') +
+        `\n\n#### 🎯 Available Operations\n\n` +
+        MarkdownUtils.operationsTable([
+          { operation: '📝 View Definition', description: 'Show the current function code' },
+          { operation: '📞 Call Function', description: 'Template for executing the function' },
+          { operation: '❌ Drop', description: 'Delete the function (Warning: Irreversible)' }
+        ])
+      )
+      .addMarkdown('##### 📝 Function Definition')
+      .addSql(`-- Current function definition\n${functionInfo.definition} `)
+      .addMarkdown('##### 📞 Call Function')
+      .addSql(`-- Call function (returns single value)
+SELECT ${item.schema}.${item.label}(${functionInfo.arguments ?
+          '\n  -- Replace with actual values:\n  ' + functionInfo.arguments.split(',').join(',\n  ')
+          : ''
+        });
+
+-- Call function (returns table/set - use for multi-row results)
+SELECT * FROM ${item.schema}.${item.label}(${functionInfo.arguments ?
+          '\n  -- Replace with actual values:\n  ' + functionInfo.arguments.split(',').join(',\n  ')
+          : ''
+        });`)
+      .addMarkdown('##### ❌ Drop Function')
+      .addSql(SQL_TEMPLATES.DROP.FUNCTION(item.schema!, item.label, functionInfo.arguments || ''))
+      .show();
+  } catch (err: any) {
+    await ErrorHandlers.handleCommandError(err, 'create function operations notebook');
+  } finally {
+    if (dbConn && dbConn.release) dbConn.release();
+  }
 }
 
 /**
@@ -75,31 +83,32 @@ export async function cmdFunctionOperations(item: DatabaseTreeItem, context: vsc
  * @param {vscode.ExtensionContext} context - The extension context.
  */
 export async function cmdEditFunction(item: DatabaseTreeItem, context: vscode.ExtensionContext) {
-    try {
-        const { connection, client, metadata } = await getDatabaseConnection(item);
+  let dbConn;
+  try {
+    dbConn = await getDatabaseConnection(item);
+    const { client, metadata } = dbConn;
 
-        try {
-            const functionResult = await client.query(QueryBuilder.functionDefinition(item.schema!, item.label));
-            if (functionResult.rows.length === 0) {
-                throw new Error('Function not found');
-            }
 
-            const functionInfo = functionResult.rows[0];
-
-            await new NotebookBuilder(metadata)
-                .addMarkdown(
-                    MarkdownUtils.header(`✏️ Edit Function: \`${item.schema}.${item.label}\``) +
-                    MarkdownUtils.infoBox('Modify the function definition below and execute the cell to update the function.')
-                )
-                .addMarkdown('##### 📝 Function Definition')
-                .addSql(functionInfo.definition)
-                .show();
-        } finally {
-            // Do not close shared client
-        }
-    } catch (err: any) {
-        await ErrorHandlers.handleCommandError(err, 'create function edit notebook');
+    const functionResult = await client.query(QueryBuilder.functionDefinition(item.schema!, item.label));
+    if (functionResult.rows.length === 0) {
+      throw new Error('Function not found');
     }
+
+    const functionInfo = functionResult.rows[0];
+
+    await new NotebookBuilder(metadata)
+      .addMarkdown(
+        MarkdownUtils.header(`✏️ Edit Function: \`${item.schema}.${item.label}\``) +
+        MarkdownUtils.infoBox('Modify the function definition below and execute the cell to update the function.')
+      )
+      .addMarkdown('##### 📝 Function Definition')
+      .addSql(functionInfo.definition)
+      .show();
+  } catch (err: any) {
+    await ErrorHandlers.handleCommandError(err, 'create function edit notebook');
+  } finally {
+    if (dbConn && dbConn.release) dbConn.release();
+  }
 }
 
 /**
@@ -111,40 +120,48 @@ export async function cmdEditFunction(item: DatabaseTreeItem, context: vscode.Ex
  * @param {vscode.ExtensionContext} context - The extension context.
  */
 export async function cmdCallFunction(item: DatabaseTreeItem, context: vscode.ExtensionContext) {
-    try {
-        const { connection, client, metadata } = await getDatabaseConnection(item);
+  let dbConn;
+  try {
+    dbConn = await getDatabaseConnection(item);
+    const { client, metadata } = dbConn;
 
-        try {
-            const functionResult = await client.query(QueryBuilder.functionSignature(item.schema!, item.label));
-            if (functionResult.rows.length === 0) {
-                throw new Error('Function not found');
-            }
 
-            const functionInfo = functionResult.rows[0];
-
-            await new NotebookBuilder(metadata)
-                .addMarkdown(
-                    MarkdownUtils.header(`📞 Call Function: \`${item.schema}.${item.label}\``) +
-                    (functionInfo.description ? MarkdownUtils.infoBox(`<strong>Description:</strong> ${functionInfo.description}`) : '') +
-                    `\n\n` +
-                    MarkdownUtils.propertiesTable({
-                        'Arguments': functionInfo.arguments ? `<code>${functionInfo.arguments}</code>` : 'None',
-                        'Returns': `<code>${functionInfo.result_type}</code>`
-                    }) +
-                    MarkdownUtils.infoBox('Edit the argument values below and execute the cell to call the function.')
-                )
-                .addMarkdown('##### 📞 Execution')
-                .addSql(`-- Call function\nSELECT ${item.schema}.${item.label} (${functionInfo.arguments ?
-                    '\n  -- Replace with actual values:\n  ' + functionInfo.arguments.split(',').join(',\n  ')
-                    : ''
-                    }); `)
-                .show();
-        } finally {
-            // Do not close shared client
-        }
-    } catch (err: any) {
-        await ErrorHandlers.handleCommandError(err, 'create function call notebook');
+    const functionResult = await client.query(QueryBuilder.functionSignature(item.schema!, item.label));
+    if (functionResult.rows.length === 0) {
+      throw new Error('Function not found');
     }
+
+    const functionInfo = functionResult.rows[0];
+
+    await new NotebookBuilder(metadata)
+      .addMarkdown(
+        MarkdownUtils.header(`📞 Call Function: \`${item.schema}.${item.label}\``) +
+        (functionInfo.description ? MarkdownUtils.infoBox(`<strong>Description:</strong> ${functionInfo.description}`) : '') +
+        `\n\n` +
+        MarkdownUtils.propertiesTable({
+          'Arguments': functionInfo.arguments ? `<code>${functionInfo.arguments}</code>` : 'None',
+          'Returns': `<code>${functionInfo.result_type}</code>`
+        }) +
+        MarkdownUtils.infoBox('Edit the argument values below and execute the cell to call the function.')
+      )
+      .addMarkdown('##### 📞 Execution')
+      .addSql(`-- Call function (returns single value)
+SELECT ${item.schema}.${item.label}(${functionInfo.arguments ?
+          '\n  -- Replace with actual values:\n  ' + functionInfo.arguments.split(',').join(',\n  ')
+          : ''
+        });
+
+-- Call function (returns table/set - use for multi-row results)
+SELECT * FROM ${item.schema}.${item.label}(${functionInfo.arguments ?
+          '\n  -- Replace with actual values:\n  ' + functionInfo.arguments.split(',').join(',\n  ')
+          : ''
+        });`)
+      .show();
+  } catch (err: any) {
+    await ErrorHandlers.handleCommandError(err, 'create function call notebook');
+  } finally {
+    if (dbConn && dbConn.release) dbConn.release();
+  }
 }
 
 /**
@@ -155,31 +172,32 @@ export async function cmdCallFunction(item: DatabaseTreeItem, context: vscode.Ex
  * @param {vscode.ExtensionContext} context - The extension context.
  */
 export async function cmdDropFunction(item: DatabaseTreeItem, context: vscode.ExtensionContext) {
-    try {
-        const { connection, client, metadata } = await getDatabaseConnection(item);
+  let dbConn;
+  try {
+    dbConn = await getDatabaseConnection(item);
+    const { client, metadata } = dbConn;
 
-        try {
-            const functionResult = await client.query(QueryBuilder.functionArguments(item.schema!, item.label));
-            if (functionResult.rows.length === 0) {
-                throw new Error('Function not found');
-            }
 
-            const functionInfo = functionResult.rows[0];
-
-            await new NotebookBuilder(metadata)
-                .addMarkdown(
-                    MarkdownUtils.header(`❌ Drop Function: \`${item.schema}.${item.label}\``) +
-                    MarkdownUtils.dangerBox('This action will permanently delete the function. This operation cannot be undone.')
-                )
-                .addMarkdown('##### ❌ Drop Command')
-                .addSql(SQL_TEMPLATES.DROP.FUNCTION(item.schema!, item.label, functionInfo.arguments || ''))
-                .show();
-        } finally {
-            // Do not close shared client
-        }
-    } catch (err: any) {
-        await ErrorHandlers.handleCommandError(err, 'create drop function notebook');
+    const functionResult = await client.query(QueryBuilder.functionArguments(item.schema!, item.label));
+    if (functionResult.rows.length === 0) {
+      throw new Error('Function not found');
     }
+
+    const functionInfo = functionResult.rows[0];
+
+    await new NotebookBuilder(metadata)
+      .addMarkdown(
+        MarkdownUtils.header(`❌ Drop Function: \`${item.schema}.${item.label}\``) +
+        MarkdownUtils.dangerBox('This action will permanently delete the function. This operation cannot be undone.')
+      )
+      .addMarkdown('##### ❌ Drop Command')
+      .addSql(SQL_TEMPLATES.DROP.FUNCTION(item.schema!, item.label, functionInfo.arguments || ''))
+      .show();
+  } catch (err: any) {
+    await ErrorHandlers.handleCommandError(err, 'create drop function notebook');
+  } finally {
+    if (dbConn && dbConn.release) dbConn.release();
+  }
 }
 
 /**
@@ -190,14 +208,16 @@ export async function cmdDropFunction(item: DatabaseTreeItem, context: vscode.Ex
  * @param {vscode.ExtensionContext} context - The extension context.
  */
 export async function cmdShowFunctionProperties(item: DatabaseTreeItem, context: vscode.ExtensionContext) {
-    try {
-        const { connection, client, metadata } = await getDatabaseConnection(item);
+  let dbConn;
+  try {
+    dbConn = await getDatabaseConnection(item);
+    const { client, metadata } = dbConn;
 
-        try {
-            // Gather comprehensive function information
-            const [functionInfo, dependenciesInfo] = await Promise.all([
-                // Detailed function info
-                client.query(`
+
+    // Gather comprehensive function information
+    const [functionInfo, dependenciesInfo] = await Promise.all([
+      // Detailed function info
+      client.query(`
                     SELECT 
                         p.proname as function_name,
                         n.nspname as schema_name,
@@ -227,8 +247,8 @@ export async function cmdShowFunctionProperties(item: DatabaseTreeItem, context:
                     WHERE n.nspname = $1 AND p.proname = $2
                 `, [item.schema, item.label]),
 
-                // Get objects that depend on this function
-                client.query(`
+      // Get objects that depend on this function
+      client.query(`
                     SELECT DISTINCT
                         dependent_ns.nspname as schema,
                         dependent_view.relname as name,
@@ -244,50 +264,50 @@ export async function cmdShowFunctionProperties(item: DatabaseTreeItem, context:
                     )
                     ORDER BY schema, name
                 `, [item.schema, item.label])
-            ]);
+    ]);
 
-            if (functionInfo.rows.length === 0) {
-                throw new Error('Function not found');
-            }
+    if (functionInfo.rows.length === 0) {
+      throw new Error('Function not found');
+    }
 
-            const func = functionInfo.rows[0];
-            const dependents = dependenciesInfo.rows;
+    const func = functionInfo.rows[0];
+    const dependents = dependenciesInfo.rows;
 
-            // Parse arguments for display
-            const argsList = func.arguments ? func.arguments.split(',').map((arg: string, idx: number) => {
-                const trimmed = arg.trim();
-                return `    <tr>
+    // Parse arguments for display
+    const argsList = func.arguments ? func.arguments.split(',').map((arg: string, idx: number) => {
+      const trimmed = arg.trim();
+      return `    <tr>
         <td>${idx + 1}</td>
         <td><code>${trimmed || '(no arguments)'}</code></td>
     </tr>`;
-            }).join('\n') : '    <tr><td colspan="2" style="text-align: center;">No arguments</td></tr>';
+    }).join('\n') : '    <tr><td colspan="2" style="text-align: center;">No arguments</td></tr>';
 
-            // Build dependencies table HTML
-            const dependencyRows = dependents.map((dep: any) => {
-                return `    <tr>
+    // Build dependencies table HTML
+    const dependencyRows = dependents.map((dep: any) => {
+      return `    <tr>
         <td>${ObjectUtils.getKindLabel(dep.kind)}</td>
         <td><code>${dep.schema}.${dep.name}</code></td>
     </tr>`;
-            }).join('\n');
+    }).join('\n');
 
-            const ownerInfo = `${func.owner} | <strong>Language:</strong> ${func.language}${func.comment ? ` | <strong>Comment:</strong> ${func.comment}` : ''}`;
-            const markdown = MarkdownUtils.header(`⚡ Function Properties: \`${item.schema}.${item.label}\``) +
-                MarkdownUtils.infoBox(`<strong>Owner:</strong> ${ownerInfo}`) +
-                `\n\n#### 📊 General Information\n\n` +
-                MarkdownUtils.propertiesTable({
-                    'Schema': func.schema_name,
-                    'Function Name': func.function_name,
-                    'Owner': func.owner,
-                    'Language': func.language,
-                    'Return Type': `<code>${func.return_type}</code>`,
-                    'Returns Set': FormatHelpers.formatBoolean(func.returns_set, 'Yes', 'No'),
-                    'Volatility': func.volatility,
-                    'Parallel Safety': func.parallel,
-                    'Security': func.security_definer ? '🔒 SECURITY DEFINER' : '👤 SECURITY INVOKER',
-                    'Strict (NULL handling)': func.strict ? '✅ Returns NULL on NULL input' : '🚫 Processes NULL inputs'
-                }) +
-                `\n\n#### 📥 Arguments${func.arguments ? ' (' + func.arguments.split(',').length + ')' : ' (0)'}\n\n` +
-                `<table style="font-size: 11px; width: 100%; border-collapse: collapse;">
+    const ownerInfo = `${func.owner} | <strong>Language:</strong> ${func.language}${func.comment ? ` | <strong>Comment:</strong> ${func.comment}` : ''}`;
+    const markdown = MarkdownUtils.header(`⚡ Function Properties: \`${item.schema}.${item.label}\``) +
+      MarkdownUtils.infoBox(`<strong>Owner:</strong> ${ownerInfo}`) +
+      `\n\n#### 📊 General Information\n\n` +
+      MarkdownUtils.propertiesTable({
+        'Schema': func.schema_name,
+        'Function Name': func.function_name,
+        'Owner': func.owner,
+        'Language': func.language,
+        'Return Type': `<code>${func.return_type}</code>`,
+        'Returns Set': FormatHelpers.formatBoolean(func.returns_set, 'Yes', 'No'),
+        'Volatility': func.volatility,
+        'Parallel Safety': func.parallel,
+        'Security': func.security_definer ? '🔒 SECURITY DEFINER' : '👤 SECURITY INVOKER',
+        'Strict (NULL handling)': func.strict ? '✅ Returns NULL on NULL input' : '🚫 Processes NULL inputs'
+      }) +
+      `\n\n#### 📥 Arguments${func.arguments ? ' (' + func.arguments.split(',').length + ')' : ' (0)'}\n\n` +
+      `<table style="font-size: 11px; width: 100%; border-collapse: collapse;">
     <tr>
         <th style="text-align: left; width: 10%;">#</th>
         <th style="text-align: left;">Argument</th>
@@ -296,7 +316,7 @@ ${argsList}
 </table>
 
 ` +
-                (dependents.length > 0 ? `#### 🔄 Dependent Objects (${dependents.length})
+      (dependents.length > 0 ? `#### 🔄 Dependent Objects (${dependents.length})
 
 ${MarkdownUtils.infoBox('Objects that depend on this function:', 'Info')}
 
@@ -309,90 +329,106 @@ ${dependencyRows}
 </table>
 
 ` : '') +
-                '---';
+      '---';
 
-            await new NotebookBuilder(metadata)
-                .addMarkdown(markdown)
-                .addMarkdown('##### 📝 Function Definition')
-                .addSql(func.definition)
-                .addMarkdown('##### ⚡ Call Function')
-                .addSql(`-- Call function\nSELECT ${item.schema}.${item.label}(${func.arguments ? func.arguments.split(',').map((arg: string, idx: number) => {
-                    const parts = arg.trim().split(' ');
-                    const type = parts[parts.length - 1];
-                    if (type.includes('int')) return `${idx + 1}`;
-                    if (type.includes('text') || type.includes('char') || type.includes('varchar')) return `'value${idx + 1}'`;
-                    if (type.includes('bool')) return 'true';
-                    if (type.includes('date')) return `'2024-01-01'`;
-                    if (type.includes('timestamp')) return `'2024-01-01 00:00:00'`;
-                    return `'value${idx + 1}'`;
-                }).join(', ') : ''});`)
-                .addMarkdown('##### 🗑️ DROP Function Script')
-                .addSql(`${SQL_TEMPLATES.DROP.FUNCTION(item.schema!, item.label, func.arguments || '')}\n\n-- Drop function (with dependencies)\n-- DROP FUNCTION IF EXISTS ${item.schema}.${item.label}(${func.arguments || ''}) CASCADE;\n\n-- Drop function (without dependencies - will fail if referenced)\n-- DROP FUNCTION IF EXISTS ${item.schema}.${item.label}(${func.arguments || ''}) RESTRICT;`)
-                .addMarkdown('##### 📊 Function Statistics')
-                .addSql(FunctionSQL.metadata(item.schema!, item.label))
-                .show();
-        } finally {
-            // Do not close shared client
-        }
-    } catch (err: any) {
-        await ErrorHandlers.handleCommandError(err, 'show function properties');
-    }
+    await new NotebookBuilder(metadata)
+      .addMarkdown(markdown)
+      .addMarkdown('##### 📝 Function Definition')
+      .addSql(func.definition)
+      .addMarkdown('##### ⚡ Call Function')
+      .addSql(`-- Call function (returns single value)
+SELECT ${item.schema}.${item.label}(${func.arguments ? func.arguments.split(',').map((arg: string, idx: number) => {
+        const parts = arg.trim().split(' ');
+        const type = parts[parts.length - 1];
+        if (type.includes('int')) return `${idx + 1}`;
+        if (type.includes('text') || type.includes('char') || type.includes('varchar')) return `'value${idx + 1}'`;
+        if (type.includes('bool')) return 'true';
+        if (type.includes('date')) return `'2024-01-01'`;
+        if (type.includes('timestamp')) return `'2024-01-01 00:00:00'`;
+        return `'value${idx + 1}'`;
+      }).join(', ') : ''});
+
+-- Call function (returns table/set - use for multi-row results)
+SELECT * FROM ${item.schema}.${item.label}(${func.arguments ? func.arguments.split(',').map((arg: string, idx: number) => {
+        const parts = arg.trim().split(' ');
+        const type = parts[parts.length - 1];
+        if (type.includes('int')) return `${idx + 1}`;
+        if (type.includes('text') || type.includes('char') || type.includes('varchar')) return `'value${idx + 1}'`;
+        if (type.includes('bool')) return 'true';
+        if (type.includes('date')) return `'2024-01-01'`;
+        if (type.includes('timestamp')) return `'2024-01-01 00:00:00'`;
+        return `'value${idx + 1}'`;
+      }).join(', ') : ''});`)
+      .addMarkdown('##### 🗑️ DROP Function Script')
+      .addSql(`${SQL_TEMPLATES.DROP.FUNCTION(item.schema!, item.label, func.arguments || '')}\n\n-- Drop function (with dependencies)\n-- DROP FUNCTION IF EXISTS ${item.schema}.${item.label}(${func.arguments || ''}) CASCADE;\n\n-- Drop function (without dependencies - will fail if referenced)\n-- DROP FUNCTION IF EXISTS ${item.schema}.${item.label}(${func.arguments || ''}) RESTRICT;`)
+      .addMarkdown('##### 📊 Function Statistics')
+      .addSql(FunctionSQL.metadata(item.schema!, item.label))
+      .show();
+  } catch (err: any) {
+    await ErrorHandlers.handleCommandError(err, 'show function properties');
+  } finally {
+    if (dbConn && dbConn.release) dbConn.release();
+  }
 }
 
 /**
  * cmdRefreshFunction - Refreshes the function item in the tree view.
  */
 export async function cmdRefreshFunction(item: DatabaseTreeItem, context: vscode.ExtensionContext, databaseTreeProvider?: DatabaseTreeProvider) {
-    databaseTreeProvider?.refresh(item);
+  databaseTreeProvider?.refresh(item);
 }
 
 /**
  * cmdCreateFunction - Command to create a new function in the database.
  */
 export async function cmdCreateFunction(item: DatabaseTreeItem, context: vscode.ExtensionContext) {
-    try {
-        const { connection, client, metadata } = await getDatabaseConnection(item);
-        const schema = item.schema!;
+  let dbConn;
+  try {
+    dbConn = await getDatabaseConnection(item);
+    const { metadata } = dbConn;
+    const schema = item.schema!;
 
-        const markdown = MarkdownUtils.header(`➕ Create New Function in Schema: \`${schema}\``) +
-            MarkdownUtils.infoBox('This notebook provides templates for creating functions. Modify the templates below and execute to create functions.') +
-            `\n\n#### 📋 Function Design Guidelines\n\n` +
-            MarkdownUtils.operationsTable([
-                { operation: '<strong>Naming</strong>', description: 'Use snake_case for function names (e.g., calculate_total, get_user_by_id)' },
-                { operation: '<strong>Language</strong>', description: 'Choose appropriate language: SQL, PL/pgSQL, PL/Python, etc.' },
-                { operation: '<strong>Volatility</strong>', description: 'Mark as IMMUTABLE, STABLE, or VOLATILE based on behavior' },
-                { operation: '<strong>Security</strong>', description: 'Use SECURITY DEFINER carefully - runs with function owner privileges' },
-                { operation: '<strong>Performance</strong>', description: 'IMMUTABLE functions can be optimized better by query planner' }
-            ]) +
-            `\n\n#### 🏷️ Common Function Patterns\n\n` +
-            MarkdownUtils.propertiesTable({
-                'SQL Function': 'Simple functions written in SQL',
-                'PL/pgSQL Function': 'Procedural language with variables and control flow',
-                'Aggregate Function': 'Functions that operate on sets of rows',
-                'Window Function': 'Functions that operate on window frames',
-                'Trigger Function': 'Functions called automatically by triggers',
-                'Security Function': 'Functions with SECURITY DEFINER for privilege escalation'
-            }) +
-            MarkdownUtils.successBox('Use CREATE OR REPLACE to update existing functions. Functions are schema-scoped objects.') +
-            `\n\n---`;
+    const markdown = MarkdownUtils.header(`➕ Create New Function in Schema: \`${schema}\``) +
+      MarkdownUtils.infoBox('This notebook provides templates for creating functions. Modify the templates below and execute to create functions.') +
+      `\n\n#### 📋 Function Design Guidelines\n\n` +
+      MarkdownUtils.operationsTable([
+        { operation: '<strong>Naming</strong>', description: 'Use snake_case for function names (e.g., calculate_total, get_user_by_id)' },
+        { operation: '<strong>Language</strong>', description: 'Choose appropriate language: SQL, PL/pgSQL, PL/Python, etc.' },
+        { operation: '<strong>Volatility</strong>', description: 'Mark as IMMUTABLE, STABLE, or VOLATILE based on behavior' },
+        { operation: '<strong>Security</strong>', description: 'Use SECURITY DEFINER carefully - runs with function owner privileges' },
+        { operation: '<strong>Performance</strong>', description: 'IMMUTABLE functions can be optimized better by query planner' }
+      ]) +
+      `\n\n#### 🏷️ Common Function Patterns\n\n` +
+      MarkdownUtils.propertiesTable({
+        'SQL Function': 'Simple functions written in SQL',
+        'PL/pgSQL Function': 'Procedural language with variables and control flow',
+        'Aggregate Function': 'Functions that operate on sets of rows',
+        'Window Function': 'Functions that operate on window frames',
+        'Trigger Function': 'Functions called automatically by triggers',
+        'Security Function': 'Functions with SECURITY DEFINER for privilege escalation'
+      }) +
+      MarkdownUtils.successBox('Use CREATE OR REPLACE to update existing functions. Functions are schema-scoped objects.') +
+      `\n\n---`;
 
-        await new NotebookBuilder(metadata)
-            .addMarkdown(markdown)
-            .addMarkdown('##### 📝 Basic SQL Function (Recommended Start)')
-            .addSql(FunctionSQL.create.sqlFunction(schema))
-            .addMarkdown('##### 🔧 PL/pgSQL Function (With Logic)')
-            .addSql(FunctionSQL.create.plpgsqlFunction(schema))
-            .addMarkdown('##### 🔄 Function Returning Table')
-            .addSql(FunctionSQL.create.tableFunction(schema))
-            .addMarkdown('##### 🔒 Security Definer Function')
-            .addSql(FunctionSQL.create.securityDefiner(schema))
-            .addMarkdown('##### ⚡ Trigger Function')
-            .addSql(FunctionSQL.create.triggerFunction(schema))
-            .addMarkdown('##### 📊 Aggregate Function')
-            .addSql(FunctionSQL.create.aggregateFunction(schema))
-            .addMarkdown(MarkdownUtils.warningBox('After creating a function, remember to: 1) Test with sample inputs, 2) Grant appropriate EXECUTE permissions, 3) Document parameters and return values, 4) Consider performance implications of volatility settings.'))
-            .show();
-    } catch (err: any) {
-        await ErrorHandlers.handleCommandError(err, 'create function notebook');
-    }
+    await new NotebookBuilder(metadata)
+      .addMarkdown(markdown)
+      .addMarkdown('##### 📝 Basic SQL Function (Recommended Start)')
+      .addSql(FunctionSQL.create.sqlFunction(schema))
+      .addMarkdown('##### 🔧 PL/pgSQL Function (With Logic)')
+      .addSql(FunctionSQL.create.plpgsqlFunction(schema))
+      .addMarkdown('##### 🔄 Function Returning Table')
+      .addSql(FunctionSQL.create.tableFunction(schema))
+      .addMarkdown('##### 🔒 Security Definer Function')
+      .addSql(FunctionSQL.create.securityDefiner(schema))
+      .addMarkdown('##### ⚡ Trigger Function')
+      .addSql(FunctionSQL.create.triggerFunction(schema))
+      .addMarkdown('##### 📊 Aggregate Function')
+      .addSql(FunctionSQL.create.aggregateFunction(schema))
+      .addMarkdown(MarkdownUtils.warningBox('After creating a function, remember to: 1) Test with sample inputs, 2) Grant appropriate EXECUTE permissions, 3) Document parameters and return values, 4) Consider performance implications of volatility settings.'))
+      .show();
+  } catch (err: any) {
+    await ErrorHandlers.handleCommandError(err, 'create function notebook');
+  } finally {
+    if (dbConn && dbConn.release) dbConn.release();
+  }
 }

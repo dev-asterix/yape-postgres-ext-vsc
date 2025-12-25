@@ -2,460 +2,467 @@
 <html lang="en">
 
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PgStudio - Professional Database Management for VS Code</title>
-    <meta name="description"
-        content="PgStudio is a comprehensive PostgreSQL database management extension featuring interactive SQL notebooks, real-time monitoring dashboard, AI-powered assistance, and advanced database operations - all within VS Code.">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Fira+Code&display=swap"
-        rel="stylesheet">
-    <link rel="stylesheet" href="styles.css">
-    <link rel="icon" type="image/png" sizes="32x32" href="assets/postgres-vsc-icon.png">
-    <link rel="icon" type="image/png" sizes="16x16" href="assets/postgres-vsc-icon.png">
-    <link rel="shortcut icon" href="assets/postgres-vsc-icon.png">
-    <link rel="apple-touch-icon" href="assets/postgres-vsc-icon.png">
-    <meta name="theme-color" content="#0b5a3a">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PgStudio - Professional Database Management for VS Code</title>
+  <meta name="description"
+    content="PgStudio is a comprehensive PostgreSQL database management extension featuring interactive SQL notebooks, real-time monitoring dashboard, AI-powered assistance, and advanced database operations - all within VS Code.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Fira+Code&display=swap"
+    rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/postgres-vsc-icon.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="assets/postgres-vsc-icon.png">
+  <link rel="shortcut icon" href="assets/postgres-vsc-icon.png">
+  <link rel="apple-touch-icon" href="assets/postgres-vsc-icon.png">
+  <meta name="theme-color" content="#0b5a3a">
 </head>
 
 <body>
-    <header>
-        <div class="container">
-            <nav>
-                <div class="logo">
-                    <a href="#" style="text-decoration: none;"
-                        onclick="window.scrollTo({top: 0, behavior: 'smooth'}); return false;">
-                        &#x1F418; <span class="gradient-text">PgStudio
-                            <span class="logo-subtitle" style="font-size: 12px;">Professional Database Management</span>
-                        </span>
-                    </a>
-                </div>
-                <!-- Mobile Menu Button removed/hidden via CSS as we are simplifying -->
-                <button class="mobile-menu-btn" aria-label="Toggle Menu" style="display: none;">&#9776;</button>
-                <div class="nav-links">
-                    <a href="#features">Features</a>
-                    <a href="#workflow">Workflow</a>
-                    <a href="#ai-powered">AI</a>
-                    <a href="https://github.com/dev-asterix/yape">GitHub</a>
-                    <button id="theme-toggle" class="theme-toggle" aria-label="Toggle Theme">&#127769;</button>
-                    <a href="https://marketplace.visualstudio.com/items?itemName=ric-v.postgres-explorer"
-                        class="nav-cta">
-                        <span class="cta-text">Install</span>
-                        <span class="cta-icon">⬇️</span>
-                    </a>
-                </div>
-            </nav>
+  <header>
+    <div class="container">
+      <nav>
+        <div class="logo">
+          <a href="#" style="text-decoration: none;"
+            onclick="window.scrollTo({top: 0, behavior: 'smooth'}); return false;">
+            &#x1F418; <span class="gradient-text">PgStudio
+              <span class="logo-subtitle" style="font-size: 12px;">Postgres Database Management In VS Code</span>
+            </span>
+          </a>
         </div>
-    </header>
-
-    <!-- Hero Section -->
-    <section class="hero">
-        <div class="container hero-content">
-            <div class="badge-row">
-                <a href="https://marketplace.visualstudio.com/items?itemName=ric-v.postgres-explorer" class="badge">
-                    <span class="badge-label">VS Code Marketplace</span>
-                    <span class="badge-value" id="badge-version">0.5.4</span>
-                </a>
-            </div>
-
-            <h1>Powerful PostgreSQL<br><span class="gradient-text">Management Inside VS Code</span></h1>
-            <p class="hero-tagline">Write SQL, manage databases, and leverage AI—all without leaving your editor.
-                Interactive notebooks, live dashboards, and intelligent assistance in one seamless extension.</p>
-
-            <div class="hero-buttons">
-                <a href="https://marketplace.visualstudio.com/items?itemName=ric-v.postgres-explorer"
-                    class="btn btn-primary">
-                    <span class="btn-icon">⬇️</span> Install Now
-                </a>
-                <a href="#guides" class="btn btn-secondary">
-                    <span class="btn-icon">✨</span> Get started
-                </a>
-            </div>
-
-            <!-- Enhanced SQL Notebook Demo -->
-            <div class="notebook-cell">
-                <div class="cell-gutter">
-                    <button class="play-button" title="Run Cell">▶</button>
-                    <span class="cell-number">1</span>
-                </div>
-                <div class="cell-content">
-                    <div class="code-lens">
-                        <a href="#ai-powered" class="lens-ai">✨ Ask AI</a>
-                        <a href="#">Optimize</a>
-                        <a href="#">Explain</a>
-                    </div>
-                    <div class="code-editor">
-                        <span class="comment">-- Real-time database insights</span><br>
-                        <span class="kwd">SELECT</span> <br>
-                        &nbsp;&nbsp;date_trunc(<span class="str">'day'</span>, created_at) <span class="kwd">AS</span>
-                        day,<br>
-                        &nbsp;&nbsp;<span class="func">COUNT</span>(*) <span class="kwd">AS</span> users,<br>
-                        &nbsp;&nbsp;<span class="func">SUM</span>(amount) <span class="kwd">AS</span> revenue<br>
-                        <span class="kwd">FROM</span> orders<br>
-                        <span class="kwd">WHERE</span> created_at >= <span class="func">NOW</span>() - <span
-                            class="kwd">INTERVAL</span> <span class="str">'7 days'</span><br>
-                        <span class="kwd">GROUP BY</span> day <span class="kwd">ORDER BY</span> day;
-                    </div>
-                    <div class="result-toolbar">
-                        <span class="result-info">✓ 7 rows in 45ms</span>
-                    </div>
-                </div>
-            </div>
+        <!-- Mobile Menu Button removed/hidden via CSS as we are simplifying -->
+        <button class="mobile-menu-btn" aria-label="Toggle Menu" style="display: none;">&#9776;</button>
+        <div class="nav-links">
+          <a href="#features">Features</a>
+          <a href="#workflow">Workflow</a>
+          <a href="#ai-powered">AI</a>
+          <a href="https://github.com/dev-asterix/yape">GitHub</a>
+          <button id="theme-toggle" class="theme-toggle" aria-label="Toggle Theme">&#127769;</button>
+          <a href="https://marketplace.visualstudio.com/items?itemName=ric-v.postgres-explorer" class="nav-cta">
+            <span class="cta-text">Install</span>
+            <span class="cta-icon">⬇️</span>
+          </a>
         </div>
-    </section>
+      </nav>
+    </div>
+  </header>
 
-    <!-- Stats Bar -->
-    <section class="stats-bar">
-        <div class="container">
-            <div class="stats-grid">
-                <div class="stat-item">
-                    <span class="stat-icon">📥</span>
-                    <div class="stat-content">
-                        <span class="stat-value" id="stat-downloads"><span class="loading-dot"></span></span>
-                        <span class="stat-label">Downloads</span>
-                    </div>
-                </div>
-                <div class="stat-item">
-                    <span class="stat-icon">⭐</span>
-                    <div class="stat-content">
-                        <span class="stat-value" id="stat-rating"><span class="loading-dot"></span></span>
-                        <span class="stat-label">Rating</span>
-                    </div>
-                </div>
-                <div class="stat-item">
-                    <span class="stat-icon">🚀</span>
-                    <div class="stat-content">
-                        <span class="stat-value" id="stat-version"><span class="loading-dot"></span></span>
-                        <span class="stat-label">Latest</span>
-                    </div>
-                </div>
-            </div>
+  <!-- Hero Section -->
+  <section class="hero">
+    <div class="container hero-content">
+      <div class="badge-row">
+        <a href="https://marketplace.visualstudio.com/items?itemName=ric-v.postgres-explorer" class="badge">
+          <span class="badge-label">VS Code Marketplace</span>
+          <span class="badge-value" id="badge-version">0.5.4</span>
+        </a>
+      </div>
+
+      <h1>Powerful PostgreSQL<br><span class="gradient-text">Management Inside VS Code</span></h1>
+      <p class="hero-tagline">Write SQL, manage databases, and leverage AI—all without leaving your editor.
+        Interactive notebooks, live dashboards, and intelligent assistance in one seamless extension.</p>
+
+      <div class="hero-buttons">
+        <a href="https://marketplace.visualstudio.com/items?itemName=ric-v.postgres-explorer" class="btn btn-primary">
+          <span class="btn-icon">⬇️</span> Install Now
+        </a>
+        <a href="#guides" class="btn btn-secondary">
+          <span class="btn-icon">✨</span> Get started
+        </a>
+      </div>
+
+      <!-- Enhanced SQL Notebook Demo -->
+      <div class="notebook-cell">
+        <div class="cell-gutter">
+          <button class="play-button" title="Run Cell">▶</button>
+          <span class="cell-number">1</span>
         </div>
-    </section>
-
-    <!-- Workflow Section -->
-    <section id="workflow" class="section workflow-section">
-        <div class="container">
-            <h2>Your Database Workflow</h2>
-            <p class="section-subtitle">Connect, Explore, Query, Analyze—all in one place</p>
-
-            <div class="workflow-diagram">
-                <div class="workflow-step">
-                    <div class="workflow-icon">🔐</div>
-                    <div class="workflow-content">
-                        <h4>Connect</h4>
-                        <p>Secure credential storage with multiple simultaneous connections</p>
-                    </div>
-                </div>
-                <div class="workflow-arrow">→</div>
-                <div class="workflow-step">
-                    <div class="workflow-icon">🌳</div>
-                    <div class="workflow-content">
-                        <h4>Explore</h4>
-                        <p>Navigate schemas, tables, views, functions with ease</p>
-                    </div>
-                </div>
-                <div class="workflow-arrow">→</div>
-                <div class="workflow-step">
-                    <div class="workflow-icon">📝</div>
-                    <div class="workflow-content">
-                        <h4>Query</h4>
-                        <p>Write interactive SQL notebooks with AI assistance</p>
-                    </div>
-                </div>
-                <div class="workflow-arrow">→</div>
-                <div class="workflow-step">
-                    <div class="workflow-icon">📊</div>
-                    <div class="workflow-content">
-                        <h4>Analyze</h4>
-                        <p>Monitor performance and export results instantly</p>
-                    </div>
-                </div>
-            </div>
+        <div class="cell-content">
+          <div class="code-lens">
+            <a href="#ai-powered" class="lens-ai">✨ Ask AI</a>
+            <a href="#ai-powered" class="lens-ai">💬 Chat</a>
+            <a href="#">Optimize</a>
+            <a href="#">Explain</a>
+          </div>
+          <div class="code-editor">
+            <span class="comment">-- Real-time database insights</span><br>
+            <span class="kwd">SELECT</span> <br>
+            &nbsp;&nbsp;date_trunc(<span class="str">'day'</span>, created_at) <span class="kwd">AS</span>
+            day,<br>
+            &nbsp;&nbsp;<span class="func">COUNT</span>(*) <span class="kwd">AS</span> users,<br>
+            &nbsp;&nbsp;<span class="func">SUM</span>(amount) <span class="kwd">AS</span> revenue<br>
+            <span class="kwd">FROM</span> orders<br>
+            <span class="kwd">WHERE</span> created_at >= <span class="func">NOW</span>() - <span
+              class="kwd">INTERVAL</span> <span class="str">'7 days'</span><br>
+            <span class="kwd">GROUP BY</span> day <span class="kwd">ORDER BY</span> day;
+          </div>
+          <div class="result-toolbar">
+            <span class="result-info">✓ 7 rows in 45ms</span>
+          </div>
         </div>
-    </section>
+      </div>
+    </div>
+  </section>
 
-    <!-- Features Section -->
-    <section id="features" class="section">
-        <div class="container">
-            <h2>Everything You Need</h2>
-            <p class="section-subtitle">Comprehensive database management tools built for modern development</p>
+  <!-- Stats Bar -->
+  <section class="stats-bar">
+    <div class="container">
+      <div class="stats-grid">
+        <div class="stat-item">
+          <span class="stat-icon">📥</span>
+          <div class="stat-content">
+            <span class="stat-value" id="stat-downloads"><span class="loading-dot"></span></span>
+            <span class="stat-label">Downloads</span>
+          </div>
+        </div>
+        <div class="stat-item">
+          <span class="stat-icon">⭐</span>
+          <div class="stat-content">
+            <span class="stat-value" id="stat-rating"><span class="loading-dot"></span></span>
+            <span class="stat-label">Rating</span>
+          </div>
+        </div>
+        <div class="stat-item">
+          <span class="stat-icon">🚀</span>
+          <div class="stat-content">
+            <span class="stat-value" id="stat-version"><span class="loading-dot"></span></span>
+            <span class="stat-label">Latest</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
 
-            <div class="feature-grid">
-                <div class="card feature-card">
-                    <div class="card-icon">🔐</div>
-                    <h3>Secure Connections</h3>
-                    <p>Enterprise-grade security for your database credentials.</p>
-                    <ul class="feature-list">
-                        <li>VS Code SecretStorage encryption</li>
-                        <li>Multiple simultaneous connections</li>
-                        <li>One-click connect/disconnect</li>
-                        <li>Connection string import</li>
-                    </ul>
-                </div>
+  <!-- Workflow Section -->
+  <section id="workflow" class="section workflow-section">
+    <div class="container">
+      <h2>Your Database Workflow</h2>
+      <p class="section-subtitle">Connect, Explore, Query, Analyze—all in one place</p>
 
-                <div class="card feature-card">
-                    <div class="card-icon">📊</div>
-                    <h3>Live Dashboard</h3>
-                    <p>Real-time database metrics and performance monitoring.</p>
-                    <ul class="feature-list">
-                        <li>Active connection monitoring</li>
-                        <li>Database size tracking</li>
-                        <li>Running query management</li>
-                        <li>Cache hit ratio analysis</li>
-                    </ul>
-                </div>
+      <div class="workflow-diagram">
+        <div class="workflow-step">
+          <div class="workflow-icon">🔐</div>
+          <div class="workflow-content">
+            <h4>Connect</h4>
+            <p>Secure credential storage with multiple simultaneous connections</p>
+          </div>
+        </div>
+        <div class="workflow-arrow">→</div>
+        <div class="workflow-step">
+          <div class="workflow-icon">🌳</div>
+          <div class="workflow-content">
+            <h4>Explore</h4>
+            <p>Navigate schemas, tables, views, functions with ease</p>
+          </div>
+        </div>
+        <div class="workflow-arrow">→</div>
+        <div class="workflow-step">
+          <div class="workflow-icon">📝</div>
+          <div class="workflow-content">
+            <h4>Query</h4>
+            <p>Write interactive SQL notebooks with AI assistance</p>
+          </div>
+        </div>
+        <div class="workflow-arrow">→</div>
+        <div class="workflow-step">
+          <div class="workflow-icon">📊</div>
+          <div class="workflow-content">
+            <h4>Analyze</h4>
+            <p>Monitor performance and export results instantly</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
 
-                <div class="card feature-card">
-                    <div class="card-icon">📓</div>
-                    <h3>SQL Notebooks</h3>
-                    <p>Interactive notebooks with rich output and AI assistance.</p>
-                    <ul class="feature-list">
-                        <li>Multi-cell query execution</li>
-                        <li>AI-powered suggestions</li>
-                        <li>Tabular result display</li>
-                        <li>Export to CSV/Excel</li>
-                    </ul>
-                </div>
+  <!-- Features Section -->
+  <section id="features" class="section">
+    <div class="container">
+      <div class="feature-badge">🚀 Unified Toolkit</div>
+      <h2 class="gradient-text">Everything You Need</h2>
+      <p class="section-subtitle">Comprehensive database management tools built for modern development</p>
 
-                <div class="card feature-card">
-                    <div class="card-icon">🌳</div>
-                    <h3>Database Explorer</h3>
-                    <p>Intuitive tree view of your entire database structure.</p>
-                    <ul class="feature-list">
-                        <li>Tables, Views, Functions</li>
-                        <li>Materialized Views</li>
-                        <li>Types, Extensions, FDWs</li>
-                        <li>Roles & Permissions</li>
-                    </ul>
-                </div>
-
-                <div class="card feature-card">
-                    <div class="card-icon">⚙️</div>
-                    <h3>Advanced Operations</h3>
-                    <p>Complete CRUD operations and schema management.</p>
-                    <ul class="feature-list">
-                        <li>View, Edit, Insert, Update, Delete</li>
-                        <li>Script generation</li>
-                        <li>Table properties & constraints</li>
-                        <li>VACUUM, ANALYZE, REINDEX</li>
-                    </ul>
-                </div>
-
-                <div class="card feature-card">
-                    <div class="card-icon">⚡</div>
-                    <h3>Developer Tools</h3>
-                    <p>Built for speed with integrated workflow tools.</p>
-                    <ul class="feature-list">
-                        <li>GitHub Copilot integration</li>
-                        <li>IntelliSense completions</li>
-                        <li>Keyboard shortcuts</li>
-                        <li>PSQL terminal access</li>
-                    </ul>
-                </div>
-            </div>
-
-            <!-- New Feature Highlights Row -->
-            <div class="feature-grid" style="margin-top: 2rem; grid-template-columns: 1fr 1fr;">
-                <div class="card feature-card" style="border-color: var(--primary-color);">
-                    <div class="card-icon">🛡️</div>
-                    <h3>Safe AI Execution</h3>
-                    <p>AI assists, but you stay in control. <strong>No auto-execution.</strong></p>
-                    <ul class="feature-list">
-                        <li>Chat-to-Notebook workflow</li>
-                        <li>Review generated SQL before running</li>
-                        <li>Edit parameters safely</li>
-                    </ul>
-                </div>
-                <div class="card feature-card" style="border-color: var(--secondary-color);">
-                    <div class="card-icon">📈</div>
-                    <h3>Advanced Visualizations</h3>
-                    <p>Turn query results into insights instantly.</p>
-                    <ul class="feature-list">
-                        <li>Bar, Line, Pie, Area charts</li>
-                        <li>Log scale & Zoom support</li>
-                        <li>Export charts as images</li>
-                    </ul>
-                </div>
-            </div>
+      <div class="feature-grid">
+        <div class="card feature-card">
+          <div class="card-icon">🔐</div>
+          <h3>Secure Connections</h3>
+          <p>Enterprise-grade security for your database credentials.</p>
+          <ul class="feature-list">
+            <li>VS Code SecretStorage encryption</li>
+            <li>Multiple simultaneous connections</li>
+            <li>One-click connect/disconnect</li>
+            <li>Connection string import</li>
+          </ul>
         </div>
 
-    </section>
-
-    <!-- AI Powered Section -->
-    <section id="ai-powered" class="section ai-section">
-        <div class="container">
-            <div class="ai-badge">✨ AI-Powered</div>
-            <h2>Intelligent SQL Assistance</h2>
-            <p class="section-subtitle">Leverage multiple AI providers to write, optimize, and debug faster</p>
-
-            <div class="ai-capabilities">
-                <div class="ai-capability">
-                    <div class="capability-icon">💡</div>
-                    <h4>Smart Completions</h4>
-                    <p>Context-aware SQL suggestions with table & column awareness</p>
-                </div>
-                <div class="ai-capability">
-                    <div class="capability-icon">🔍</div>
-                    <h4>Query Explanation</h4>
-                    <p>Understand complex queries with plain English explanations</p>
-                </div>
-                <div class="ai-capability">
-                    <div class="capability-icon">⚡</div>
-                    <h4>Performance Tips</h4>
-                    <p>Get suggestions to improve query performance automatically</p>
-                </div>
-                <div class="ai-capability">
-                    <div class="capability-icon">🛡️</div>
-                    <h4>Error Detection</h4>
-                    <p>Syntax and logical error detection with fixes</p>
-                </div>
-                <div class="ai-capability">
-                    <div class="capability-icon">📄</div>
-                    <h4>Query Generation</h4>
-                    <p>Describe what you need in natural language, let AI do the heavy-lifting</p>
-                </div>
-                <div class="ai-capability">
-                    <div class="capability-icon">🗂️</div>
-                    <h4>Schema Understanding</h4>
-                    <p>The model understands your database schema for accurate suggestions through schema attachments
-                    </p>
-                </div>
-            </div>
-
-            <!-- AI Demo Code -->
-            <div class="ai-code-demo">
-                <div class="code-demo-header">
-                    <span>💬 Natural Language → SQL</span>
-                    <span class="code-demo-subtitle">Make AI work for you...</span>
-                </div>
-                <div class="code-demo-content">
-                    <div class="user-prompt">
-                        <span class="prompt-label">You:</span>
-                        <span class="prompt-text">"Show me top 10
-                            <span class="prompt-attach">@public.customers</span>
-                            by revenue in the last 30 days"</span>
-                    </div>
-                    <div class="ai-response">
-                        <span class="response-label">✨ AI Generated:</span>
-                        <div class="code-block">
-                            <span class="kwd">SELECT</span><br>
-                            &nbsp;&nbsp;c.id, c.name,<br>
-                            &nbsp;&nbsp;<span class="func">SUM</span>(o.amount) <span class="kwd">AS</span> total<br>
-                            <span class="kwd">FROM</span><br>
-                            &nbsp;&nbsp;<span class="prompt-attach">@public.customers</span>
-                            c<br>
-                            <span class="kwd">JOIN</span> orders o <span class="kwd">ON</span> c.id = o.customer_id<br>
-                            <span class="kwd">WHERE</span> o.created_at >= <span class="func">NOW</span>() - <span
-                                class="kwd">INTERVAL</span> <span class="str">'30 days'</span><br>
-                            <span class="kwd">GROUP BY</span> c.id, c.name<br>
-                            <span class="kwd">ORDER BY</span> total <span class="kwd">DESC LIMIT</span> <span
-                                class="num">10</span>;
-                        </div>
-                    </div>
-                </div>
-            </div>
+        <div class="card feature-card">
+          <div class="card-icon">📊</div>
+          <h3>Live Dashboard</h3>
+          <p>Real-time database metrics and performance monitoring.</p>
+          <ul class="feature-list">
+            <li>Active connection monitoring</li>
+            <li>Database size tracking</li>
+            <li>Running query management</li>
+            <li>Cache hit ratio analysis</li>
+          </ul>
         </div>
-    </section>
 
-    <!-- Video Guides Section -->
-    <section id="guides" class="section guides-section" style="background-color: var(--bg-secondary);">
-        <div class="container">
-            <h2>Video Guides</h2>
-            <p class="section-subtitle">See PgStudio in action with these step-by-step guides</p>
-
-            <div class="carousel-wrapper">
-                <button class="carousel-btn prev-btn" aria-label="Previous Video">❮</button>
-                <div class="video-carousel">
-                    <div class="video-card carousel-item">
-                        <h3 style="margin-bottom: 1rem; font-size: 1.2rem;">Detailed Setup Guide</h3>
-                        <div class="video-wrapper">
-                            <img src="assets/01-setup.gif" width="100%" alt="PgStudio Setup Guide"
-                                style="border-radius: 8px;" />
-                            <button class="expand-btn" aria-label="Expand Video">⤢</button>
-                        </div>
-                    </div>
-                    <div class="video-card carousel-item">
-                        <h3 style="margin-bottom: 1rem; font-size: 1.2rem;">Database Explorer</h3>
-                        <div class="video-wrapper">
-                            <img src="assets/03-explorer.gif" width="100%" alt="Database Explorer Guide"
-                                style="border-radius: 8px;" />
-                            <button class="expand-btn" aria-label="Expand Video">⤢</button>
-                        </div>
-                    </div>
-                    <div class="video-card carousel-item">
-                        <h3 style="margin-bottom: 1rem; font-size: 1.2rem;">AI Assistant Setup</h3>
-                        <div class="video-wrapper">
-                            <img src="assets/02-ai-assist-setup.gif" width="100%" alt="AI Assistant Setup Guide"
-                                style="border-radius: 8px;" />
-                            <button class="expand-btn" aria-label="Expand Video">⤢</button>
-                        </div>
-                    </div>
-                    <div class="video-card carousel-item">
-                        <h3 style="margin-bottom: 1rem; font-size: 1.2rem;">AI Assistant in Action</h3>
-                        <div class="video-wrapper">
-                            <img src="assets/04-ai-assist.gif" width="100%" alt="AI Assistant in Action"
-                                style="border-radius: 8px;" />
-                            <button class="expand-btn" aria-label="Expand Video">⤢</button>
-                        </div>
-                    </div>
-                </div>
-                <button class="carousel-btn next-btn" aria-label="Next Video">❯</button>
-            </div>
-
-            <div class="carousel-indicators">
-                <span class="indicator active" data-index="0"></span>
-                <span class="indicator" data-index="1"></span>
-                <span class="indicator" data-index="2"></span>
-                <span class="indicator" data-index="3"></span>
-            </div>
+        <div class="card feature-card">
+          <div class="card-icon">📓</div>
+          <h3>SQL Notebooks</h3>
+          <p>Interactive notebooks with rich output and AI assistance.</p>
+          <ul class="feature-list">
+            <li>Multi-cell query execution</li>
+            <li>AI-powered chat integration</li>
+            <li>Context-aware suggestions</li>
+            <li>Export results to CSV/Excel</li>
+          </ul>
         </div>
-    </section>
 
-    <!-- Footer -->
-    <footer>
-        <div class="container">
-            <div class="footer-content">
-                <div class="footer-brand">
-                    <span class="logo">🐘 <span class="gradient-text">PgStudio</span></span>
-                    <p>Professional PostgreSQL management for VS Code</p>
-                </div>
-                <div class="footer-links-grid">
-                    <div class="footer-col">
-                        <h4>Resources</h4>
-                        <a href="https://github.com/dev-asterix/yape#readme">Documentation</a>
-                        <a href="https://github.com/dev-asterix/yape/blob/main/CHANGELOG.md">Changelog</a>
-                    </div>
-                    <div class="footer-col">
-                        <h4>Community</h4>
-                        <a href="https://github.com/dev-asterix/yape">GitHub</a>
-                        <a href="https://github.com/dev-asterix/yape/issues">Report Issues</a>
-                    </div>
-                    <div class="footer-col">
-                        <h4>Install</h4>
-                        <a
-                            href="https://marketplace.visualstudio.com/items?itemName=ric-v.postgres-explorer">Marketplace</a>
-                        <a href="https://open-vsx.org/extension/ric-v/postgres-explorer">Open VSX</a>
-                    </div>
-                </div>
-            </div>
-            <div class="footer-bottom">
-                <p>Made with ❤ by <a href="https://github.com/dev-asterix">astrx.dev</a> • MIT License</p>
-            </div>
+        <div class="card feature-card">
+          <div class="card-icon">🌳</div>
+          <h3>Database Explorer</h3>
+          <p>Intuitive tree view of your entire database structure.</p>
+          <ul class="feature-list">
+            <li>Tables, Views, Functions</li>
+            <li>Materialized Views</li>
+            <li>Types, Extensions, FDWs</li>
+            <li>Roles & Permissions</li>
+          </ul>
         </div>
-    </footer>
 
-    <!-- Media Modal -->
-    <div id="video-modal" class="modal">
-        <span class="close-modal">&times;</span>
-        <div class="modal-content">
-            <img style="display: none; width: 100%; border-radius: 8px;" alt="Expanded view" />
-            <video controls width="100%" style="display: none; border-radius: 8px;"></video>
+        <div class="card feature-card">
+          <div class="card-icon">⚙️</div>
+          <h3>Advanced Operations</h3>
+          <p>Complete CRUD operations and schema management.</p>
+          <ul class="feature-list">
+            <li>View, Edit, Insert, Update, Delete</li>
+            <li>Script generation</li>
+            <li>Table properties & constraints</li>
+            <li>VACUUM, ANALYZE, REINDEX</li>
+          </ul>
         </div>
+
+        <div class="card feature-card">
+          <div class="card-icon">⚡</div>
+          <h3>Developer Tools</h3>
+          <p>Built for speed with integrated workflow tools.</p>
+          <ul class="feature-list">
+            <li>GitHub Copilot integration</li>
+            <li>IntelliSense completions</li>
+            <li>Keyboard shortcuts</li>
+            <li>PSQL terminal access</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- New Feature Highlights Row -->
+      <div class="feature-grid highlight-row">
+        <div class="card feature-card highlight-cyan">
+          <div class="card-icon">🛡️</div>
+          <h3>Safe AI Execution</h3>
+          <p>AI assists, but you stay in control. <strong>No auto-execution.</strong></p>
+          <ul class="feature-list">
+            <li>Chat-to-Notebook workflow</li>
+            <li>Review generated SQL before running</li>
+            <li>Edit parameters safely</li>
+          </ul>
+        </div>
+        <div class="card feature-card highlight-purple">
+          <div class="card-icon">📈</div>
+          <h3>Advanced Visualizations</h3>
+          <p>Turn query results into insights instantly.</p>
+          <ul class="feature-list">
+            <li>Bar, Line, Pie, Area charts</li>
+            <li>Log scale & Zoom support</li>
+            <li>Export charts as images</li>
+          </ul>
+        </div>
+      </div>
     </div>
 
-    <script src="script.js"></script>
+  </section>
+
+  <!-- AI Powered Section -->
+  <section id="ai-powered" class="section ai-section">
+    <div class="container">
+      <div class="ai-badge">✨ AI-Powered</div>
+      <h2>Intelligent SQL Assistance</h2>
+      <p class="section-subtitle">Leverage multiple AI providers to write, optimize, and debug faster</p>
+
+      <div class="ai-capabilities">
+        <div class="ai-capability">
+          <div class="capability-icon">💡</div>
+          <h4>Smart Completions</h4>
+          <p>Context-aware SQL suggestions with table & column awareness</p>
+        </div>
+        <div class="ai-capability">
+          <div class="capability-icon">🔍</div>
+          <h4>Query Explanation</h4>
+          <p>Understand complex queries with plain English explanations</p>
+        </div>
+        <div class="ai-capability">
+          <div class="capability-icon">⚡</div>
+          <h4>Performance Tips</h4>
+          <p>Get suggestions to improve query performance and index recommendations</p>
+        </div>
+        <div class="ai-capability">
+          <div class="capability-icon">🛡️</div>
+          <h4>Error Detection</h4>
+          <p>Syntax and logical error detection with automatic fixes</p>
+        </div>
+        <div class="ai-capability">
+          <div class="capability-icon">📄</div>
+          <h4>Query Generation</h4>
+          <p>Describe what you need in natural language, let AI do the heavy-lifting</p>
+        </div>
+        <div class="ai-capability">
+          <div class="capability-icon">🗂️</div>
+          <h4>Schema Understanding</h4>
+          <p>The model understands your database schema for accurate suggestions through schema attachments
+          </p>
+        </div>
+        <div class="ai-capability">
+          <div class="capability-icon">💬</div>
+          <h4>Send to Chat</h4>
+          <p>One-click button to send query results directly to AI chat for follow-up analysis</p>
+        </div>
+        <div class="ai-capability">
+          <div class="capability-icon">🛠️</div>
+          <h4>Custom Instructions</h4>
+          <p>Provide specific rules and style guidelines to tailor AI responses to your needs</p>
+        </div>
+      </div>
+
+      <!-- AI Demo Code -->
+      <div class="ai-code-demo">
+        <div class="code-demo-header">
+          <span>💬 Natural Language → SQL</span>
+          <span class="code-demo-subtitle">Make AI work for you...</span>
+        </div>
+        <div class="code-demo-content">
+          <div class="user-prompt">
+            <span class="prompt-label">You:</span>
+            <span class="prompt-text">"Show me top 10
+              <span class="prompt-attach">@public.customers</span>
+              by revenue in the last 30 days"</span>
+          </div>
+          <div class="ai-response">
+            <span class="response-label">✨ AI Generated:</span>
+            <div class="code-block">
+              <span class="kwd">SELECT</span><br>
+              &nbsp;&nbsp;c.id, c.name,<br>
+              &nbsp;&nbsp;<span class="func">SUM</span>(o.amount) <span class="kwd">AS</span> total<br>
+              <span class="kwd">FROM</span><br>
+              &nbsp;&nbsp;<span class="prompt-attach">@public.customers</span>
+              c<br>
+              <span class="kwd">JOIN</span> orders o <span class="kwd">ON</span> c.id = o.customer_id<br>
+              <span class="kwd">WHERE</span> o.created_at >= <span class="func">NOW</span>() - <span
+                class="kwd">INTERVAL</span> <span class="str">'30 days'</span><br>
+              <span class="kwd">GROUP BY</span> c.id, c.name<br>
+              <span class="kwd">ORDER BY</span> total <span class="kwd">DESC LIMIT</span> <span class="num">10</span>;
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Video Guides Section -->
+  <section id="guides" class="section guides-section" style="background-color: var(--bg-secondary);">
+    <div class="container">
+      <h2>Video Guides</h2>
+      <p class="section-subtitle">See PgStudio in action with these step-by-step guides</p>
+
+      <div class="carousel-wrapper">
+        <button class="carousel-btn prev-btn" aria-label="Previous Video">❮</button>
+        <div class="video-carousel">
+          <div class="video-card carousel-item">
+            <h3 style="margin-bottom: 1rem; font-size: 1.2rem;">Detailed Setup Guide</h3>
+            <div class="video-wrapper">
+              <img src="assets/01-setup.gif" width="100%" alt="PgStudio Setup Guide" style="border-radius: 8px;" />
+              <button class="expand-btn" aria-label="Expand Video">⤢</button>
+            </div>
+          </div>
+          <div class="video-card carousel-item">
+            <h3 style="margin-bottom: 1rem; font-size: 1.2rem;">Database Explorer</h3>
+            <div class="video-wrapper">
+              <img src="assets/03-explorer.gif" width="100%" alt="Database Explorer Guide"
+                style="border-radius: 8px;" />
+              <button class="expand-btn" aria-label="Expand Video">⤢</button>
+            </div>
+          </div>
+          <div class="video-card carousel-item">
+            <h3 style="margin-bottom: 1rem; font-size: 1.2rem;">AI Assistant Setup</h3>
+            <div class="video-wrapper">
+              <img src="assets/02-ai-assist-setup.gif" width="100%" alt="AI Assistant Setup Guide"
+                style="border-radius: 8px;" />
+              <button class="expand-btn" aria-label="Expand Video">⤢</button>
+            </div>
+          </div>
+          <div class="video-card carousel-item">
+            <h3 style="margin-bottom: 1rem; font-size: 1.2rem;">AI Assistant in Action</h3>
+            <div class="video-wrapper">
+              <img src="assets/04-ai-assist.gif" width="100%" alt="AI Assistant in Action"
+                style="border-radius: 8px;" />
+              <button class="expand-btn" aria-label="Expand Video">⤢</button>
+            </div>
+          </div>
+        </div>
+        <button class="carousel-btn next-btn" aria-label="Next Video">❯</button>
+      </div>
+
+      <div class="carousel-indicators">
+        <span class="indicator active" data-index="0"></span>
+        <span class="indicator" data-index="1"></span>
+        <span class="indicator" data-index="2"></span>
+        <span class="indicator" data-index="3"></span>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer>
+    <div class="container">
+      <div class="footer-content">
+        <div class="footer-brand">
+          <span class="logo">🐘 <span class="gradient-text">PgStudio</span></span>
+          <p>Professional PostgreSQL management for VS Code</p>
+        </div>
+        <div class="footer-links-grid">
+          <div class="footer-col">
+            <h4>Resources</h4>
+            <a href="https://github.com/dev-asterix/yape#readme">Documentation</a>
+            <a href="https://github.com/dev-asterix/yape/blob/main/CHANGELOG.md">Changelog</a>
+          </div>
+          <div class="footer-col">
+            <h4>Community</h4>
+            <a href="https://github.com/dev-asterix/yape">GitHub</a>
+            <a href="https://github.com/dev-asterix/yape/issues">Report Issues</a>
+          </div>
+          <div class="footer-col">
+            <h4>Install</h4>
+            <a href="https://marketplace.visualstudio.com/items?itemName=ric-v.postgres-explorer">Marketplace</a>
+            <a href="https://open-vsx.org/extension/ric-v/postgres-explorer">Open VSX</a>
+          </div>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <p>Made with ❤ by <a href="https://github.com/dev-asterix">astrx.dev</a> • MIT License</p>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Media Modal -->
+  <div id="video-modal" class="modal">
+    <span class="close-modal">&times;</span>
+    <div class="modal-content">
+      <img style="display: none; width: 100%; border-radius: 8px;" alt="Expanded view" />
+      <video controls width="100%" style="display: none; border-radius: 8px;"></video>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
 </body>
 
 </html>
