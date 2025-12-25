@@ -25,11 +25,12 @@
 - [x] 🕒 Recent items tracking (max 10 items)
 - [x] Object count badges on category nodes (right-aligned, muted)
 
-### 2B: Notebook Experience
-- [ ] Query cancellation button
-- [ ] Virtual scrolling for large result sets (1000+ rows)
-- [ ] Sticky column headers
-- [ ] Column resizing
+### 2B: Notebook Experience ✅ MOSTLY COMPLETE
+- [x] Sticky headers (already implemented)
+- [x] Query cancellation backend infrastructure
+- [x] Column resizing  
+- [ ] Virtual scrolling (deferred - 6-8 hrs)
+- [ ] Cancel button UI (deferred - requires major refactor)
 
 ### 2C: AI Assistant
 - [ ] Schema context caching
