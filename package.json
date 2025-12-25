@@ -62,6 +62,26 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "postgres-explorer.filterTree",
+        "title": "Filter Tree",
+        "icon": "$(filter)"
+      },
+      {
+        "command": "postgres-explorer.clearFilter",
+        "title": "Clear Filter",
+        "icon": "$(search-remove)"
+      },
+      {
+        "command": "postgres-explorer.addToFavorites",
+        "title": "Add to Favorites",
+        "icon": "$(star-empty)"
+      },
+      {
+        "command": "postgres-explorer.removeFromFavorites",
+        "title": "Remove from Favorites",
+        "icon": "$(star-full)"
+      },
+      {
         "command": "postgres-explorer.manageConnections",
         "title": "Manage Connections",
         "icon": "$(settings-gear)"
@@ -932,6 +952,16 @@
           "group": "navigation"
         },
         {
+          "command": "postgres-explorer.filterTree",
+          "when": "view == postgresExplorer && !postgresExplorer.filterActive",
+          "group": "navigation"
+        },
+        {
+          "command": "postgres-explorer.clearFilter",
+          "when": "view == postgresExplorer && postgresExplorer.filterActive",
+          "group": "navigation"
+        },
+        {
           "command": "postgres-explorer.refreshConnections",
           "when": "view == postgresExplorer",
           "group": "navigation"
@@ -962,6 +992,16 @@
           "command": "postgres-explorer.deleteConnection",
           "when": "view == postgresExplorer && viewItem == connection",
           "group": "9_delete"
+        },
+        {
+          "command": "postgres-explorer.addToFavorites",
+          "when": "view == postgresExplorer && viewItem =~ /^(table|view|function|materialized-view)$/ && !postgresExplorer.isFavorite",
+          "group": "0_favorites"
+        },
+        {
+          "command": "postgres-explorer.removeFromFavorites",
+          "when": "view == postgresExplorer && viewItem =~ /^(table|view|function|materialized-view)$/ && postgresExplorer.isFavorite",
+          "group": "0_favorites"
         },
         {
           "command": "postgres-explorer.disconnectConnection",
