@@ -102,6 +102,16 @@
         "icon": "$(new-file)"
       },
       {
+        "command": "postgres-explorer.generateQuery",
+        "title": "AI: Generate Query",
+        "category": "PgStudio"
+      },
+      {
+        "command": "postgres-explorer.optimizeQuery",
+        "title": "AI: Optimize Query",
+        "category": "PgStudio"
+      },
+      {
         "command": "postgres-explorer.connect",
         "title": "Connect to PostgreSQL Database"
       },

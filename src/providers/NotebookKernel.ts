@@ -3,6 +3,7 @@ import * as vscode from 'vscode';
 import { PostgresMetadata } from '../common/types';
 import { ConnectionManager } from '../services/ConnectionManager';
 import { SecretStorageService } from '../services/SecretStorageService';
+import { HistoryService } from '../services/HistoryService';
 
 export class PostgresKernel implements vscode.Disposable {
   readonly id = 'postgres-kernel';
@@ -53,14 +54,14 @@ export class PostgresKernel implements vscode.Disposable {
       if (!connection) return undefined;
 
       try {
-        return await ConnectionManager.getInstance().getConnection({
+        return await ConnectionManager.getInstance().getSessionClient({
           id: connection.id,
           host: connection.host,
           port: connection.port,
           username: connection.username,
           database: metadata.databaseName || connection.database,
           name: connection.name
-        });
+        }, cell.notebook.uri.toString());
       } catch (err) {
         console.error('Error connecting to database:', err);
         return undefined;
@@ -293,19 +294,26 @@ export class PostgresKernel implements vscode.Disposable {
             throw new Error('Connection not found');
           }
 
-          // Create a new connection to cancel the query
-          const cancelClient = await ConnectionManager.getInstance().getConnection({
-            id: connection.id,
-            host: connection.host,
-            port: connection.port,
-            username: connection.username,
-            database: databaseName || connection.database,
-            name: connection.name
-          });
+          let cancelClient;
+          try {
+            // Create a new connection to cancel the query
+            cancelClient = await ConnectionManager.getInstance().getPooledClient({
+              id: connection.id,
+              host: connection.host,
+              port: connection.port,
+              username: connection.username,
+              database: databaseName || connection.database,
+              name: connection.name
+            });
 
-          // Cancel the backend process
-          await cancelClient.query('SELECT pg_cancel_backend($1)', [backendPid]);
-          vscode.window.showInformationMessage(`Query cancelled (PID: ${backendPid})`);
+            // Cancel the backend process
+            await cancelClient.query('SELECT pg_cancel_backend($1)', [backendPid]);
+            vscode.window.showInformationMessage(`Query cancelled (PID: ${backendPid})`);
+          } finally {
+            if (cancelClient) {
+              cancelClient.release();
+            }
+          }
         } catch (err: any) {
           vscode.window.showErrorMessage(`Failed to cancel query: ${err.message}`);
           console.error('Cancel query error:', err);
@@ -408,33 +416,24 @@ export class PostgresKernel implements vscode.Disposable {
           }
           console.log('PostgresKernel: Using connection:', savedConnection.name);
 
-          // Get password from secret storage
-          const secretService = SecretStorageService.getInstance(this.context);
-          const password = await secretService.getPassword(savedConnection.id);
-
-          const client = new Client({
+          const client = await ConnectionManager.getInstance().getSessionClient({
+            id: savedConnection.id,
             host: savedConnection.host,
             port: savedConnection.port,
-            user: savedConnection.username,
-            password: password || '',
+            username: savedConnection.username,
             database: metadata.databaseName || savedConnection.database,
-            ssl: savedConnection.ssl ? { rejectUnauthorized: false } : false
-          });
+            name: savedConnection.name
+          }, notebook.uri.toString());
 
-          console.log('PostgresKernel: Connecting to database:', metadata.databaseName || savedConnection.database);
-          await client.connect();
+          console.log('PostgresKernel: Using session client for updates');
 
-          try {
-            // Execute all UPDATE statements
-            const combinedQuery = statements.join('\n');
-            console.log('PostgresKernel: Executing query:', combinedQuery);
-            const result = await client.query(combinedQuery);
-            console.log('PostgresKernel: Query result:', result);
+          // Execute all UPDATE statements
+          const combinedQuery = statements.join('\n');
+          console.log('PostgresKernel: Executing query:', combinedQuery);
+          const result = await client.query(combinedQuery);
+          console.log('PostgresKernel: Query result:', result);
 
-            vscode.window.showInformationMessage(`✅ Successfully saved ${statements.length} change(s) to database.`);
-          } finally {
-            await client.end();
-          }
+          vscode.window.showInformationMessage(`✅ Successfully saved ${statements.length} change(s) to database.`);
         } catch (err: any) {
           console.error('PostgresKernel: Background update error:', err);
           vscode.window.showErrorMessage(`Failed to save changes: ${err.message}`);
@@ -520,14 +519,14 @@ export class PostgresKernel implements vscode.Disposable {
           const connection = connections.find(c => c.id === metadata.connectionId);
           if (!connection) throw new Error('Connection not found');
 
-          const client = await ConnectionManager.getInstance().getConnection({
+          const client = await ConnectionManager.getInstance().getSessionClient({
             id: connection.id,
             host: connection.host,
             port: connection.port,
             username: connection.username,
             database: metadata.databaseName || connection.database,
             name: connection.name
-          });
+          }, notebook.uri.toString());
 
           // Construct DELETE query
           const conditions: string[] = [];
@@ -682,14 +681,14 @@ export class PostgresKernel implements vscode.Disposable {
         throw new Error('Connection not found');
       }
 
-      const client = await ConnectionManager.getInstance().getConnection({
+      const client = await ConnectionManager.getInstance().getSessionClient({
         id: connection.id,
         host: connection.host,
         port: connection.port,
         username: connection.username,
         database: metadata.databaseName || connection.database,
         name: connection.name
-      });
+      }, cell.notebook.uri.toString());
 
       console.log('PostgresKernel: Connected to database');
 
@@ -733,10 +732,21 @@ export class PostgresKernel implements vscode.Disposable {
           const executionTime = (stmtEndTime - stmtStartTime) / 1000;
           totalExecutionTime += executionTime;
 
+          const MAX_ROWS = 10000;
+          let rows = result.rows || [];
+          let truncated = false;
+
+          if (rows.length > MAX_ROWS) {
+            rows = rows.slice(0, MAX_ROWS);
+            truncated = true;
+            notices.push(`Warning: Result truncated to ${MAX_ROWS} rows for performance.`);
+          }
+
           console.log(`PostgresKernel: Statement ${stmtIndex + 1} result:`, {
             hasFields: !!result.fields,
             fieldsLength: result.fields?.length,
-            rowsLength: result.rows?.length,
+            rowsLength: rows.length,
+            truncated,
             command: result.command
           });
 
@@ -818,25 +828,43 @@ export class PostgresKernel implements vscode.Disposable {
             }
           }
 
-          // Generate output for this statement
-          const data = {
-            columns: result.fields ? result.fields.map((f: any) => f.name) : [],
-            columnTypes: columnTypes,
-            rows: result.rows || [],
-            rowCount: result.rowCount,
-            command: result.command,
-            notices: [...notices],
-            executionTime: executionTime,
-            tableInfo: tableInfo,
-            cellIndex: cell.index,
-            backendPid: backendPid,
-            success: true
-          };
+          outputs.push(new vscode.NotebookCellOutput([
+            vscode.NotebookCellOutputItem.json({
+              columns: result.fields?.map((f: any) => f.name) || [],
+              rows: rows,
+              rowCount: result.rowCount,
+              command: result.command,
+              query: query,
+              notices: notices,
+              executionTime: executionTime,
+              tableInfo: tableInfo,
+              success: true,
+              truncated: truncated,
+              columnTypes: result.fields?.reduce((acc: any, field: any) => {
+                // Helper function to format type names (e.g., _int4 to int4[])
+                const formatType = (dataTypeID: number) => {
+                  const typeName = columnTypes[field.name]; // Use the already fetched type name
+                  if (typeName.startsWith('_') && typeName.length > 1) {
+                    return typeName.substring(1) + '[]';
+                  }
+                  return typeName;
+                };
+                acc[field.name] = formatType(field.dataTypeID);
+                return acc;
+              }, {})
+            }, 'text/x-json'), // Use custom mime type for renderer
+            vscode.NotebookCellOutputItem.json(rows, 'application/json') // Standard JSON fallback
+          ]));
 
-          const cellOutput = new vscode.NotebookCellOutput([
-            vscode.NotebookCellOutputItem.json(data, 'application/x-postgres-result')
-          ]);
-          outputs.push(cellOutput);
+          // Track query history
+          HistoryService.getInstance().addQuery({
+            query: cell.document.getText(),
+            status: 'success',
+            duration: executionTime,
+            rowCount: result.rowCount ?? undefined
+          });
+
+
 
           console.log(`PostgresKernel: Generated output for statement ${stmtIndex + 1}, outputs count: ${outputs.length}`);
 
@@ -849,34 +877,21 @@ export class PostgresKernel implements vscode.Disposable {
 
           console.error(`PostgresKernel: Statement ${stmtIndex + 1} error:`, err.message);
 
-          // Show error for this specific statement
-          const errorHtml = `
-                        <div style="
-                            padding: 10px;
-                            margin: 5px 0;
-                            background: var(--vscode-inputValidation-errorBackground);
-                            border: 1px solid var(--vscode-inputValidation-errorBorder);
-                            border-radius: 4px;
-                        ">
-                            <div style="color: var(--vscode-errorForeground); font-weight: bold;">
-                                ✗ Statement ${stmtIndex + 1}/${statements.length} Error
-                            </div>
-                            <div style="
-                                color: var(--vscode-foreground);
-                                margin-top: 5px;
-                                font-family: var(--vscode-editor-font-family);
-                                white-space: pre-wrap;
-                            ">${err.message || err}</div>
-                            <div style="
-                                color: var(--vscode-foreground);
-                                opacity: 0.7;
-                                font-size: 0.9em;
-                                margin-top: 5px;
-                            ">Execution time: ${executionTime.toFixed(3)} sec.</div>
-                        </div>
-                    `;
+          // Track query history
+          HistoryService.getInstance().addQuery({
+            query: cell.document.getText(),
+            status: 'error',
+            duration: Date.now() - stmtStartTime,
+            errorMessage: err.message
+          });
+
           const cellOutput = new vscode.NotebookCellOutput([
-            vscode.NotebookCellOutputItem.text(errorHtml, 'text/html')
+            vscode.NotebookCellOutputItem.json({
+              success: false,
+              error: err.message,
+              canExplain: true,
+              query: cell.document.getText()
+            }, 'application/x-postgres-result')
           ]);
           outputs.push(cellOutput);
 

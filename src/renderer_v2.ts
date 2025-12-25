@@ -1,8 +1,13 @@
 import type { ActivationFunction } from 'vscode-notebook-renderer';
 import { Chart, registerables } from 'chart.js';
+import { createButton, createTab } from './renderer/components/ui';
+import { createExportButton } from './renderer/features/export';
+import { createAiButtons } from './renderer/features/ai';
 
 // Register all Chart.js components
 Chart.register(...registerables);
+
+
 
 export const activate: ActivationFunction = context => {
   return {
@@ -14,7 +19,7 @@ export const activate: ActivationFunction = context => {
         return;
       }
 
-      const { columns, rows, rowCount, command, notices, executionTime, tableInfo, success, columnTypes, backendPid } = json;
+      const { columns = [], rows, rowCount, command, query, notices, executionTime, tableInfo, success, columnTypes, backendPid } = json;
       // Deep copy rows to allow modifications without affecting originals
       const originalRows: any[] = rows ? JSON.parse(JSON.stringify(rows)) : [];
       let currentRows: any[] = rows ? JSON.parse(JSON.stringify(rows)) : [];
@@ -106,6 +111,68 @@ export const activate: ActivationFunction = context => {
         header.style.borderBottom = isExpanded ? '1px solid var(--vscode-widget-border)' : 'none';
       });
 
+      // Error Output (with AI buttons)
+      if (json.error) {
+        const errorContainer = document.createElement('div');
+        errorContainer.style.padding = '12px';
+        errorContainer.style.borderBottom = '1px solid var(--vscode-widget-border)';
+        errorContainer.innerHTML = `
+          <div style="color: var(--vscode-errorForeground); padding: 8px;">
+            <strong>Error executing query:</strong><br>
+            <pre style="white-space: pre-wrap; margin-top: 4px;">${json.error}</pre>
+            ${json.canExplain ? `
+            <div style="margin-top: 12px; display: flex; gap: 8px;">
+                <button id="explain-btn" style="
+                    background: var(--vscode-button-secondaryBackground); 
+                    color: var(--vscode-button-secondaryForeground);
+                    border: none;
+                    padding: 6px 12px;
+                    border-radius: 4px;
+                    cursor: pointer;
+                    display: flex;
+                    align-items: center;
+                    gap: 6px;
+                ">✨ Explain Error</button>
+                <button id="fix-btn" style="
+                    background: var(--vscode-button-secondaryBackground); 
+                    color: var(--vscode-button-secondaryForeground);
+                    border: none;
+                    padding: 6px 12px;
+                    border-radius: 4px;
+                    cursor: pointer;
+                    display: flex;
+                    align-items: center;
+                    gap: 6px;
+                ">🛠️ Fix Query</button>
+            </div>` : ''}
+          </div>
+        `;
+
+        if (json.canExplain) {
+          // Need to wait for element to be in DOM or attach via closure if creating elements directly
+          // Since we used innerHTML, we need to find them
+          setTimeout(() => {
+            errorContainer.querySelector('#explain-btn')?.addEventListener('click', (e) => {
+              e.stopPropagation();
+              context.postMessage?.({
+                type: 'explainError',
+                error: json.error,
+                query: json.query
+              });
+            });
+            errorContainer.querySelector('#fix-btn')?.addEventListener('click', (e) => {
+              e.stopPropagation();
+              context.postMessage?.({
+                type: 'fixQuery',
+                error: json.error,
+                query: json.query
+              });
+            });
+          }, 0);
+        }
+        contentContainer.appendChild(errorContainer);
+      }
+
       // Messages Section
       if (notices && notices.length > 0) {
         const messagesContainer = document.createElement('div');
@@ -143,19 +210,7 @@ export const activate: ActivationFunction = context => {
       actionsBar.style.borderBottom = '1px solid var(--vscode-panel-border)';
       actionsBar.style.background = 'var(--vscode-editor-background)';
 
-      const createButton = (text: string, primary: boolean = false) => {
-        const btn = document.createElement('button');
-        btn.textContent = text;
-        btn.style.background = primary ? 'var(--vscode-button-background)' : 'var(--vscode-button-secondaryBackground)';
-        btn.style.color = primary ? 'var(--vscode-button-foreground)' : 'var(--vscode-button-secondaryForeground)';
-        btn.style.border = 'none';
-        btn.style.padding = '4px 12px';
-        btn.style.cursor = 'pointer';
-        btn.style.borderRadius = '2px';
-        btn.style.fontSize = '12px';
-        btn.style.fontWeight = '500';
-        return btn;
-      };
+      // createButton imported from ./renderer/components/ui
       const selectAllBtn = createButton('Select All', true);
       selectAllBtn.addEventListener('click', () => {
         const allSelected = selectedIndices.size === currentRows.length;
@@ -245,206 +300,22 @@ export const activate: ActivationFunction = context => {
         }
       });
 
-      const exportBtn = createButton('Export ▼', true);
-      exportBtn.style.position = 'relative';
+      const { analyzeBtn, optimizeBtn } = createAiButtons(
+        { postMessage: (msg: any) => context.postMessage?.(msg) },
+        columns,
+        currentRows,
+        query || command || 'result set',
+        command,
+        executionTime
+      );
 
-      exportBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-
-        // Remove existing dropdown if any
-        const existing = document.querySelector('.export-dropdown');
-        if (existing) {
-          existing.remove();
-          return;
-        }
-
-        const menu = document.createElement('div');
-        menu.className = 'export-dropdown';
-        menu.style.position = 'absolute';
-        menu.style.top = '100%';
-        menu.style.left = '0';
-        menu.style.background = 'var(--vscode-menu-background)';
-        menu.style.border = '1px solid var(--vscode-menu-border)';
-        menu.style.boxShadow = '0 2px 8px rgba(0,0,0,0.15)';
-        menu.style.zIndex = '100';
-        menu.style.minWidth = '150px';
-        menu.style.borderRadius = '3px';
-        menu.style.padding = '4px 0';
-
-        const createMenuItem = (label: string, onClick: () => void) => {
-          const item = document.createElement('div');
-          item.textContent = label;
-          item.style.padding = '6px 12px';
-          item.style.cursor = 'pointer';
-          item.style.color = 'var(--vscode-menu-foreground)';
-          item.style.fontSize = '12px';
-
-          item.addEventListener('mouseenter', () => {
-            item.style.background = 'var(--vscode-menu-selectionBackground)';
-            item.style.color = 'var(--vscode-menu-selectionForeground)';
-          });
-          item.addEventListener('mouseleave', () => {
-            item.style.background = 'transparent';
-            item.style.color = 'var(--vscode-menu-foreground)';
-          });
-          item.addEventListener('click', (e) => {
-            e.stopPropagation();
-            onClick();
-            menu.remove();
-          });
-          return item;
-        };
-
-        const downloadFile = (content: string, filename: string, type: string) => {
-          const blob = new Blob([content], { type });
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = filename;
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-          URL.revokeObjectURL(url);
-        };
-
-        const stringifyValue = (val: any): string => {
-          if (val === null || val === undefined) return '';
-          if (typeof val === 'object') return JSON.stringify(val);
-          return String(val);
-        };
-
-        const getCSV = () => {
-          const header = columns.map((c: string) => `"${c.replace(/"/g, '""')}"`).join(',');
-          const body = currentRows.map(row => {
-            return columns.map((col: string) => {
-              const val = row[col];
-              const str = stringifyValue(val);
-              if (str.includes(',') || str.includes('"') || str.includes('\n')) {
-                return `"${str.replace(/"/g, '""')}"`;
-              }
-              return str;
-            }).join(',');
-          }).join('\n');
-          return `${header}\n${body}`;
-        };
-
-        const getMarkdown = () => {
-          const header = `| ${columns.join(' | ')} |`;
-          const separator = `| ${columns.map(() => '---').join(' | ')} |`;
-          const body = currentRows.map(row => {
-            return `| ${columns.map((col: string) => {
-              const val = row[col];
-              if (val === null || val === undefined) return 'NULL';
-              const str = typeof val === 'object' ? JSON.stringify(val) : String(val);
-              return str.replace(/\|/g, '\\|').replace(/\n/g, ' ');
-            }).join(' | ')} |`;
-          }).join('\n');
-          return `${header}\n${separator}\n${body}`;
-        };
-
-        const getSQLInsert = () => {
-          if (!tableInfo) return '-- Table information not available for INSERT script';
-          const tableName = `"${tableInfo.schema}"."${tableInfo.table}"`;
-          const cols = columns.map((c: string) => `"${c}"`).join(', ');
-
-          return currentRows.map((row: any) => {
-            const values = columns.map((col: string) => {
-              const val = row[col];
-              if (val === null || val === undefined) return 'NULL';
-              if (typeof val === 'number') return val;
-              if (typeof val === 'boolean') return val ? 'TRUE' : 'FALSE';
-              const str = typeof val === 'object' ? JSON.stringify(val) : String(val);
-              return `'${str.replace(/'/g, "''")}'`;
-            }).join(', ');
-            return `INSERT INTO ${tableName} (${cols}) VALUES (${values});`;
-          }).join('\n');
-        };
-
-        const getExcel = () => {
-          // Simple HTML-based Excel format
-          const header = columns.map((c: string) => `<th>${c}</th>`).join('');
-          const body = currentRows.map(row => {
-            const cells = columns.map((col: string) => {
-              const val = row[col];
-              return `<td>${stringifyValue(val)}</td>`;
-            }).join('');
-            return `<tr>${cells}</tr>`;
-          }).join('');
-
-          return `
-                        <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
-                        <head>
-                            <!--[if gte mso 9]>
-                            <xml>
-                                <x:ExcelWorkbook>
-                                    <x:ExcelWorksheets>
-                                        <x:ExcelWorksheet>
-                                            <x:Name>Sheet1</x:Name>
-                                            <x:WorksheetOptions>
-                                                <x:DisplayGridlines/>
-                                            </x:WorksheetOptions>
-                                        </x:ExcelWorksheet>
-                                    </x:ExcelWorksheets>
-                                </x:ExcelWorkbook>
-                            </xml>
-                            <![endif]-->
-                        </head>
-                        <body>
-                            <table>
-                                <thead><tr>${header}</tr></thead>
-                                <tbody>${body}</tbody>
-                            </table>
-                        </body>
-                        </html>
-                    `;
-        };
-
-        menu.appendChild(createMenuItem('Save as CSV', () => {
-          downloadFile(getCSV(), `export_${Date.now()}.csv`, 'text/csv');
-        }));
-
-        menu.appendChild(createMenuItem('Save as Excel', () => {
-          downloadFile(getExcel(), `export_${Date.now()}.xls`, 'application/vnd.ms-excel');
-        }));
-
-        menu.appendChild(createMenuItem('Save as JSON', () => {
-          const jsonStr = JSON.stringify(currentRows, null, 2);
-          downloadFile(jsonStr, `export_${Date.now()}.json`, 'application/json');
-        }));
-
-        menu.appendChild(createMenuItem('Save as Markdown', () => {
-          downloadFile(getMarkdown(), `export_${Date.now()}.md`, 'text/markdown');
-        }));
-
-        if (tableInfo) {
-          menu.appendChild(createMenuItem('Copy SQL INSERT', () => {
-            navigator.clipboard.writeText(getSQLInsert()).then(() => {
-              exportBtn.textContent = 'Copied!';
-              setTimeout(() => exportBtn.textContent = 'Export ▼', 2000);
-            });
-          }));
-        }
-
-        menu.appendChild(createMenuItem('Copy to Clipboard', () => {
-          navigator.clipboard.writeText(getCSV()).then(() => {
-            exportBtn.textContent = 'Copied!';
-            setTimeout(() => exportBtn.textContent = 'Export ▼', 2000);
-          });
-        }));
-
-        exportBtn.appendChild(menu);
-
-        // Close menu when clicking outside
-        const closeMenu = () => {
-          menu.remove();
-          document.removeEventListener('click', closeMenu);
-        };
-        setTimeout(() => document.addEventListener('click', closeMenu), 0);
-      });
+      const exportBtn = createExportButton(columns, currentRows, tableInfo);
 
       actionsBar.appendChild(selectAllBtn);
       actionsBar.appendChild(copyBtn);
       actionsBar.appendChild(exportBtn);
+      actionsBar.appendChild(analyzeBtn);
+      actionsBar.appendChild(optimizeBtn);
 
       // Helper to detect numeric columns
       const getNumericColumns = (): string[] => {
@@ -588,33 +459,16 @@ export const activate: ActivationFunction = context => {
       // Create tab bar
       const tabBar = document.createElement('div');
       tabBar.style.cssText = `
-                display: flex;
-                gap: 0;
-                border-bottom: 1px solid var(--vscode-panel-border);
-                background: var(--vscode-editor-background);
-            `;
+        display: flex;
+        gap: 0;
+        border-bottom: 1px solid var(--vscode-panel-border);
+        background: var(--vscode-editor-background);
+    `;
 
-      const createTab = (label: string, id: 'table' | 'chart') => {
-        const tab = document.createElement('button');
-        tab.textContent = label;
-        tab.dataset.tabId = id;
-        tab.style.cssText = `
-                    padding: 8px 16px;
-                    border: none;
-                    background: ${id === activeTab ? 'var(--vscode-tab-activeBackground)' : 'transparent'};
-                    color: ${id === activeTab ? 'var(--vscode-tab-activeForeground)' : 'var(--vscode-tab-inactiveForeground)'};
-                    border-bottom: ${id === activeTab ? '2px solid var(--vscode-focusBorder)' : '2px solid transparent'};
-                    cursor: pointer;
-                    font-size: 12px;
-                    font-weight: 500;
-                    transition: all 0.15s;
-                `;
-        tab.addEventListener('click', () => switchTab(id));
-        return tab;
-      };
+      // createTab imported from ./renderer/components/ui
 
-      const tableTab = createTab('📋 Table', 'table');
-      const chartTab = createTab('📊 Chart', 'chart');
+      const tableTab = createTab('📋 Table', 'table', activeTab === 'table', () => switchTab('table'));
+      const chartTab = createTab('📊 Chart', 'chart', (activeTab as string) === 'chart', () => switchTab('chart'));
       tabBar.appendChild(tableTab);
       tabBar.appendChild(chartTab);
 
@@ -657,16 +511,16 @@ export const activate: ActivationFunction = context => {
       // Build chart configuration panel
       const chartConfigPanel = document.createElement('div');
       chartConfigPanel.style.cssText = `
-                width: 260px;
-                min-width: 260px;
-                padding: 12px;
-                border-right: 1px solid var(--vscode-panel-border);
-                overflow-y: auto;
-                display: flex;
-                flex-direction: column;
-                gap: 12px;
-                background: var(--vscode-sideBar-background);
-            `;
+        width: 260px;
+        min-width: 260px;
+        padding: 12px;
+        border-right: 1px solid var(--vscode-panel-border);
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        background: var(--vscode-sideBar-background);
+    `;
 
       // Chart Type Section
       const chartTypeSection = document.createElement('div');
@@ -693,14 +547,14 @@ export const activate: ActivationFunction = context => {
         btn.textContent = type.icon;
         btn.title = type.label;
         btn.style.cssText = `
-                    padding: 6px;
-                    border: 1px solid var(--vscode-widget-border);
-                    background: ${type.id === selectedChartType ? 'var(--vscode-button-background)' : 'var(--vscode-input-background)'};
-                    color: ${type.id === selectedChartType ? 'var(--vscode-button-foreground)' : 'var(--vscode-foreground)'};
-                    border-radius: 4px;
-                    cursor: pointer;
-                    font-size: 14px;
-                `;
+            padding: 6px;
+            border: 1px solid var(--vscode-widget-border);
+            background: ${type.id === selectedChartType ? 'var(--vscode-button-background)' : 'var(--vscode-input-background)'};
+            color: ${type.id === selectedChartType ? 'var(--vscode-button-foreground)' : 'var(--vscode-foreground)'};
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        `;
         btn.addEventListener('click', () => {
           selectedChartType = type.id;
           chartTypeBtns.forEach(b => {
@@ -737,14 +591,14 @@ export const activate: ActivationFunction = context => {
 
       const xAxisSelect = document.createElement('select');
       xAxisSelect.style.cssText = `
-                width: 100%;
-                padding: 6px;
-                border: 1px solid var(--vscode-input-border);
-                background: var(--vscode-input-background);
-                color: var(--vscode-input-foreground);
-                border-radius: 4px;
-                font-size: 12px;
-            `;
+        width: 100%;
+        padding: 6px;
+        border: 1px solid var(--vscode-input-border);
+        background: var(--vscode-input-background);
+        color: var(--vscode-input-foreground);
+        border-radius: 4px;
+        font-size: 12px;
+    `;
       columns.forEach((col: string) => {
         const option = document.createElement('option');
         option.value = col;
@@ -778,15 +632,15 @@ export const activate: ActivationFunction = context => {
       dateFormatInput.value = dateFormat;
       dateFormatInput.placeholder = 'YYYY-MM-DD HH:mm';
       dateFormatInput.style.cssText = `
-                width: 100%;
-                padding: 6px;
-                border: 1px solid var(--vscode-input-border);
-                background: var(--vscode-input-background);
-                color: var(--vscode-input-foreground);
-                border-radius: 4px;
-                font-size: 12px;
-                box-sizing: border-box;
-            `;
+        width: 100%;
+        padding: 6px;
+        border: 1px solid var(--vscode-input-border);
+        background: var(--vscode-input-background);
+        color: var(--vscode-input-foreground);
+        border-radius: 4px;
+        font-size: 12px;
+        box-sizing: border-box;
+    `;
       dateFormatInput.addEventListener('input', () => {
         dateFormat = dateFormatInput.value || 'YYYY-MM-DD';
         updateChart();
@@ -912,14 +766,14 @@ export const activate: ActivationFunction = context => {
 
       const valuesSelect = document.createElement('select');
       valuesSelect.style.cssText = `
-                width: 100%;
-                padding: 6px;
-                border: 1px solid var(--vscode-input-border);
-                background: var(--vscode-input-background);
-                color: var(--vscode-input-foreground);
-                border-radius: 4px;
-                font-size: 12px;
-            `;
+        width: 100%;
+        padding: 6px;
+        border: 1px solid var(--vscode-input-border);
+        background: var(--vscode-input-background);
+        color: var(--vscode-input-foreground);
+        border-radius: 4px;
+        font-size: 12px;
+    `;
 
       // Add "Count" option as default
       const countOption = document.createElement('option');
@@ -2200,9 +2054,448 @@ export const activate: ActivationFunction = context => {
         mainContainer.insertBefore(overlay, mainContainer.firstChild);
       };
 
+      // Infinite scroll state
+      const CHUNK_SIZE = 200;
+      let renderedCount = 0;
+      let tableBody: HTMLElement | null = null;
+      let loadMoreObserver: IntersectionObserver | null = null;
+      let loadMoreSentinel: HTMLElement | null = null;
+
+      const renderNextChunk = () => {
+        if (!tableBody) return;
+
+        const start = renderedCount;
+        const end = Math.min(renderedCount + CHUNK_SIZE, currentRows.length);
+        if (start >= end) {
+          // No more rows to render, remove sentinel if it exists
+          if (loadMoreSentinel) {
+            loadMoreSentinel.remove();
+            loadMoreSentinel = null;
+            loadMoreObserver?.disconnect();
+            loadMoreObserver = null;
+          }
+          return;
+        }
+
+        const chunk = currentRows.slice(start, end);
+
+        chunk.forEach((row: any, i: number) => {
+          const index = start + i;
+          const tr = document.createElement('tr');
+          tr.style.cursor = 'pointer';
+
+          const updateRowStyle = () => {
+            if (selectedIndices.has(index)) {
+              tr.style.background = 'var(--vscode-list-activeSelectionBackground)';
+              tr.style.color = 'var(--vscode-list-activeSelectionForeground)';
+            } else {
+              tr.style.background = index % 2 === 0 ? 'transparent' : 'var(--vscode-keybindingTable-rowsBackground)';
+              tr.style.color = 'var(--vscode-editor-foreground)';
+            }
+          };
+          updateRowStyle();
+
+          tr.addEventListener('click', (e) => {
+            if (e.ctrlKey || e.metaKey) {
+              if (selectedIndices.has(index)) {
+                selectedIndices.delete(index);
+              } else {
+                selectedIndices.add(index);
+              }
+            } else {
+              selectedIndices.clear();
+              selectedIndices.add(index);
+            }
+            // Efficiently update selection styles for all currently rendered rows
+            const allRows = tableBody!.children;
+            for (let j = 0; j < allRows.length; j++) {
+              const rowEl = allRows[j] as HTMLElement;
+              const rowIndex = start + j; // Calculate actual index for the rendered row
+              const isSelected = selectedIndices.has(rowIndex);
+              if (isSelected) {
+                rowEl.style.background = 'var(--vscode-list-activeSelectionBackground)';
+                rowEl.style.color = 'var(--vscode-list-activeSelectionForeground)';
+              } else {
+                rowEl.style.background = rowIndex % 2 === 0 ? 'transparent' : 'var(--vscode-keybindingTable-rowsBackground)';
+                rowEl.style.color = 'var(--vscode-editor-foreground)';
+              }
+            }
+            updateActionsVisibility();
+          });
+
+          tr.addEventListener('mouseenter', () => {
+            if (!selectedIndices.has(index)) {
+              tr.style.background = 'var(--vscode-list-hoverBackground)';
+            }
+          });
+
+          tr.addEventListener('mouseleave', () => {
+            if (!selectedIndices.has(index)) {
+              tr.style.background = index % 2 === 0 ? 'transparent' : 'var(--vscode-keybindingTable-rowsBackground)';
+            }
+          });
+
+          // Selection Cell
+          const selectTd = document.createElement('td');
+          selectTd.style.borderBottom = '1px solid var(--vscode-widget-border)';
+          selectTd.style.borderRight = '1px solid var(--vscode-widget-border)';
+          selectTd.style.textAlign = 'center';
+          selectTd.style.fontSize = '10px';
+          selectTd.style.color = 'var(--vscode-descriptionForeground)';
+          selectTd.textContent = String(index + 1);
+          tr.appendChild(selectTd);
+
+          columns.forEach((col: string) => {
+            const td = document.createElement('td');
+            const val = row[col];
+            const colType = columnTypes ? columnTypes[col] : undefined;
+            const { text, isNull, type } = formatValue(val, colType);
+            const cellKey = `${index}-${col}`;
+            const isModified = modifiedCells.has(cellKey);
+
+            // Debug: Log modified cell detection
+            if (isModified) {
+              console.log('Renderer: Rendering modified cell with highlight:', cellKey);
+            }
+
+            td.style.padding = '6px 12px';
+            td.style.borderBottom = '1px solid var(--vscode-widget-border)';
+            td.style.borderRight = '1px solid var(--vscode-widget-border)';
+            td.style.textAlign = 'left'; // Ensure left alignment for all cells
+            td.style.maxWidth = '400px'; // Prevent columns from stretching too wide
+            td.style.overflow = 'hidden'; // Prevent text overflow
+            td.style.textOverflow = 'ellipsis'; // Show ... for overflow
+            td.style.whiteSpace = 'nowrap'; // Don't wrap text
+            td.style.backgroundColor = 'var(--vscode-editor-background)'; // Solid background to prevent overlap
+
+            // Set cursor based on editability
+            const isPrimaryKey = tableInfo?.primaryKeys?.includes(col);
+            td.style.cursor = tableInfo && !isPrimaryKey ? 'text' : 'default';
+            if (isPrimaryKey) {
+              td.style.backgroundColor = 'rgba(128, 128, 128, 0.1)';
+              td.title = 'Primary key - cannot be edited';
+            }
+
+            // Highlight modified cells - apply AFTER base styles and make more visible
+            if (isModified) {
+              td.style.backgroundColor = '#fff3cd'; // Brighter yellow background
+              td.style.borderLeft = '4px solid #ffc107';
+              td.style.color = '#856404'; // Darker text for contrast
+              td.setAttribute('data-modified', 'true');
+            }
+
+            // Function to enable editing
+            const enableEditing = (e: Event) => {
+              e.stopPropagation();
+              if (!tableInfo) return; // Only allow editing if we have table info
+              if (currentlyEditingCell === td) return; // Already editing this cell
+
+              // Don't allow editing primary key columns
+              if (tableInfo.primaryKeys && tableInfo.primaryKeys.includes(col)) {
+                console.log('Renderer: Cannot edit primary key column:', col);
+                return;
+              }
+
+              // Close any other editing cell
+              if (currentlyEditingCell) {
+                const existingInput = currentlyEditingCell.querySelector('input, textarea');
+                if (existingInput) {
+                  (existingInput as HTMLElement).blur();
+                }
+              }
+
+              currentlyEditingCell = td;
+              const currentValue = currentRows[index][col];
+              const isJsonType = type === 'json' || type === 'object';
+              const isBoolType = type === 'boolean';
+
+              td.innerHTML = '';
+
+              if (isBoolType) {
+                // For boolean, use a checkbox
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.checked = currentValue === true;
+                checkbox.style.width = '18px';
+                checkbox.style.height = '18px';
+                checkbox.style.cursor = 'pointer';
+
+                checkbox.addEventListener('change', () => {
+                  const newValue = checkbox.checked;
+                  if (newValue !== originalRows[index][col]) {
+                    modifiedCells.set(cellKey, { originalValue: originalRows[index][col], newValue });
+                  } else {
+                    modifiedCells.delete(cellKey);
+                  }
+                  currentRows[index][col] = newValue;
+                  updateSaveButtonVisibility();
+                  currentlyEditingCell = null;
+                  updateTable(); // Re-render to show updated value and styling
+                });
+
+                td.appendChild(checkbox);
+                checkbox.focus();
+              } else if (isJsonType) {
+                // For JSON, use textarea with buttons
+                const editContainer = document.createElement('div');
+                editContainer.style.display = 'flex';
+                editContainer.style.flexDirection = 'column';
+                editContainer.style.gap = '4px';
+                editContainer.style.width = '100%';
+
+                const textarea = document.createElement('textarea');
+                textarea.value = typeof currentValue === 'object' ? JSON.stringify(currentValue, null, 2) : (currentValue || '');
+                textarea.style.width = '100%';
+                textarea.style.minWidth = '200px';
+                textarea.style.minHeight = '80px';
+                textarea.style.padding = '4px';
+                textarea.style.border = '1px solid var(--vscode-focusBorder)';
+                textarea.style.borderRadius = '3px';
+                textarea.style.backgroundColor = 'var(--vscode-input-background)';
+                textarea.style.color = 'var(--vscode-input-foreground)';
+                textarea.style.fontFamily = 'var(--vscode-editor-font-family)';
+                textarea.style.fontSize = '12px';
+                textarea.style.resize = 'both';
+
+                const saveEdit = () => {
+                  console.log('JSON saveEdit called for cell:', cellKey);
+                  let newValue: any;
+                  try {
+                    newValue = JSON.parse(textarea.value);
+                    console.log('Parsed JSON successfully:', newValue);
+                  } catch (err) {
+                    console.warn('JSON parse failed, saving as string:', err);
+                    newValue = textarea.value;
+                  }
+
+                  const originalValue = originalRows[index][col];
+                  console.log('Original value:', originalValue);
+                  console.log('New value:', newValue);
+                  console.log('Are they different?', JSON.stringify(newValue) !== JSON.stringify(originalValue));
+
+                  if (JSON.stringify(newValue) !== JSON.stringify(originalValue)) {
+                    modifiedCells.set(cellKey, { originalValue, newValue });
+                    console.log('Added to modified cells:', cellKey);
+                  } else {
+                    modifiedCells.delete(cellKey);
+                    console.log('Values are same, removed from modified cells');
+                  }
+                  currentRows[index][col] = newValue;
+                  updateSaveButtonVisibility();
+                  currentlyEditingCell = null;
+                  updateTable();
+                  console.log('JSON save completed, table updated');
+                };
+
+                const cancelEdit = () => {
+                  currentlyEditingCell = null;
+                  updateTable();
+                };
+
+                // Button container
+                const buttonContainer = document.createElement('div');
+                buttonContainer.style.display = 'flex';
+                buttonContainer.style.gap = '4px';
+                buttonContainer.style.justifyContent = 'flex-end';
+
+                // Save button
+                const saveBtn = document.createElement('button');
+                saveBtn.textContent = '✓ Save';
+                saveBtn.style.padding = '4px 12px';
+                saveBtn.style.backgroundColor = 'var(--vscode-button-background)';
+                saveBtn.style.color = 'var(--vscode-button-foreground)';
+                saveBtn.style.border = 'none';
+                saveBtn.style.borderRadius = '3px';
+                saveBtn.style.cursor = 'pointer';
+                saveBtn.style.fontSize = '12px';
+                saveBtn.addEventListener('click', (e) => {
+                  e.stopPropagation();
+                  saveEdit();
+                });
+
+                // Cancel button
+                const cancelBtn = document.createElement('button');
+                cancelBtn.textContent = '✕ Cancel';
+                cancelBtn.style.padding = '4px 12px';
+                cancelBtn.style.backgroundColor = 'var(--vscode-button-secondaryBackground)';
+                cancelBtn.style.color = 'var(--vscode-button-secondaryForeground)';
+                cancelBtn.style.border = 'none';
+                cancelBtn.style.borderRadius = '3px';
+                cancelBtn.style.cursor = 'pointer';
+                cancelBtn.addEventListener('click', (e) => {
+                  e.stopPropagation();
+                  cancelEdit();
+                });
+
+                buttonContainer.appendChild(saveBtn);
+                buttonContainer.appendChild(cancelBtn);
+                editContainer.appendChild(textarea);
+                editContainer.appendChild(buttonContainer);
+                td.appendChild(editContainer);
+
+                textarea.focus();
+                textarea.select();
+
+                // Handle blur for JSON textarea
+                textarea.addEventListener('blur', (e) => {
+                  // If blur is due to clicking save/cancel, don't re-render immediately
+                  if (e.relatedTarget === saveBtn || e.relatedTarget === cancelBtn) {
+                    return;
+                  }
+                  // If editing is still active, save changes
+                  if (currentlyEditingCell === td) {
+                    saveEdit();
+                  }
+                });
+
+                // Handle keyboard shortcuts for JSON textarea
+                textarea.addEventListener('keydown', (e) => {
+                  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                    e.preventDefault();
+                    saveEdit();
+                  } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    cancelEdit();
+                  }
+                });
+
+              } else {
+                // For other types, use a simple input field
+                const input = document.createElement('input');
+                input.type = 'text';
+                input.value = isNull ? '' : String(currentValue);
+                input.style.width = '100%';
+                input.style.padding = '4px';
+                input.style.border = '1px solid var(--vscode-focusBorder)';
+                input.style.borderRadius = '3px';
+                input.style.backgroundColor = 'var(--vscode-input-background)';
+                input.style.color = 'var(--vscode-input-foreground)';
+                input.style.fontFamily = 'var(--vscode-editor-font-family)';
+                input.style.fontSize = '12px';
+
+                td.appendChild(input);
+                input.focus();
+                input.select();
+
+                const saveEdit = () => {
+                  const newValue = input.value === '' && isNull ? null : input.value;
+                  if (newValue !== originalRows[index][col]) {
+                    modifiedCells.set(cellKey, { originalValue: originalRows[index][col], newValue });
+                  } else {
+                    modifiedCells.delete(cellKey);
+                  }
+                  currentRows[index][col] = newValue;
+                  updateSaveButtonVisibility();
+                  currentlyEditingCell = null;
+                  updateTable();
+                };
+
+                const cancelEdit = () => {
+                  currentlyEditingCell = null;
+                  updateTable();
+                };
+
+                input.addEventListener('blur', saveEdit);
+                input.addEventListener('keydown', (e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    saveEdit();
+                  } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    cancelEdit();
+                  }
+                });
+              }
+            };
+
+            // Display value
+            const span = document.createElement('span');
+            span.textContent = text;
+            span.title = text; // Tooltip for full content
+            if (isNull) {
+              span.style.fontStyle = 'italic';
+              span.style.opacity = '0.7';
+            }
+            td.appendChild(span);
+
+            // Add click listener for editing
+            if (tableInfo && !isPrimaryKey) {
+              td.addEventListener('dblclick', enableEditing);
+            }
+
+            // Add JSON viewer button if applicable
+            if (type === 'json' || type === 'object') {
+              const viewJsonBtn = document.createElement('button');
+              viewJsonBtn.textContent = 'View JSON';
+              viewJsonBtn.style.marginLeft = '8px';
+              viewJsonBtn.style.padding = '2px 6px';
+              viewJsonBtn.style.fontSize = '10px';
+              viewJsonBtn.style.background = 'var(--vscode-button-secondaryBackground)';
+              viewJsonBtn.style.color = 'var(--vscode-button-secondaryForeground)';
+              viewJsonBtn.style.border = 'none';
+              viewJsonBtn.style.borderRadius = '3px';
+              viewJsonBtn.style.cursor = 'pointer';
+              viewJsonBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                showJsonModal(val, col);
+              });
+              td.appendChild(viewJsonBtn);
+            }
+
+            tr.appendChild(td);
+          });
+
+          tableBody!.appendChild(tr);
+        });
+
+        renderedCount = end; // Update renderedCount to the actual end of the chunk
+
+        // Manage sentinel visibility and observer
+        if (renderedCount < currentRows.length) {
+          if (!loadMoreSentinel) {
+            loadMoreSentinel = document.createElement('div');
+            loadMoreSentinel.innerHTML = 'Loading more rows...';
+            loadMoreSentinel.style.padding = '10px';
+            loadMoreSentinel.style.textAlign = 'center';
+            loadMoreSentinel.style.opacity = '0.7';
+            tableContainer.appendChild(loadMoreSentinel);
+
+            loadMoreObserver = new IntersectionObserver((entries) => {
+              if (entries[0].isIntersecting) {
+                renderNextChunk();
+              }
+            }, {
+              root: tableContainer, // Observe within the scrollable tableContainer
+              rootMargin: '0px 0px 200px 0px', // Load when 200px from bottom
+              threshold: 0.1
+            });
+            loadMoreObserver.observe(loadMoreSentinel);
+          } else {
+            // Ensure sentinel is at the bottom if it already exists
+            if (loadMoreSentinel.parentNode !== tableContainer || loadMoreSentinel !== tableContainer.lastChild) {
+              tableContainer.appendChild(loadMoreSentinel);
+            }
+          }
+        } else {
+          // All rows rendered, remove sentinel
+          if (loadMoreSentinel) {
+            loadMoreSentinel.remove();
+            loadMoreSentinel = null;
+            loadMoreObserver?.disconnect();
+            loadMoreObserver = null;
+          }
+        }
+      };
+
       const updateTable = () => {
         tableContainer.innerHTML = '';
-        // countSpan.textContent = `${currentRows.length} rows`; // Moved to header summary
+        renderedCount = 0;
+        tableBody = null;
+        if (loadMoreObserver) {
+          loadMoreObserver.disconnect();
+          loadMoreObserver = null;
+        }
+        loadMoreSentinel = null;
 
         if (currentRows.length === 0) {
           const empty = document.createElement('div');
@@ -2224,7 +2517,7 @@ export const activate: ActivationFunction = context => {
         table.style.lineHeight = '1.5';
 
         const thead = document.createElement('thead');
-        const tbody = document.createElement('tbody');
+        tableBody = document.createElement('tbody'); // Assign to global tableBody
 
         // Header
         const headerRow = document.createElement('tr');
@@ -2384,7 +2677,7 @@ export const activate: ActivationFunction = context => {
             th.style.maxWidth = `${newWidth}px`;
 
             // Update all cells in this column
-            const allRows = tbody.querySelectorAll('tr');
+            const allRows = tableBody!.querySelectorAll('tr');
             allRows.forEach((row) => {
               const cells = row.querySelectorAll('td');
               const cell = cells[colIndex + 1]; // +1 for selection column
@@ -2409,470 +2702,12 @@ export const activate: ActivationFunction = context => {
         });
         thead.appendChild(headerRow);
 
-        // Body
-        currentRows.forEach((row: any, index: number) => {
-          const tr = document.createElement('tr');
-          tr.style.cursor = 'pointer';
-
-          const updateRowStyle = () => {
-            if (selectedIndices.has(index)) {
-              tr.style.background = 'var(--vscode-list-activeSelectionBackground)';
-              tr.style.color = 'var(--vscode-list-activeSelectionForeground)';
-            } else {
-              tr.style.background = index % 2 === 0 ? 'transparent' : 'var(--vscode-keybindingTable-rowsBackground)'; // Alternating colors if available, or just transparent
-              tr.style.color = 'var(--vscode-editor-foreground)';
-            }
-          };
-          updateRowStyle();
-
-          tr.addEventListener('click', (e) => {
-            if (e.ctrlKey || e.metaKey) {
-              if (selectedIndices.has(index)) {
-                selectedIndices.delete(index);
-              } else {
-                selectedIndices.add(index);
-              }
-            } else {
-              selectedIndices.clear();
-              selectedIndices.add(index);
-            }
-            // Re-render all rows to update selection styles (inefficient but simple for now)
-            // Optimization: just update this row and previously selected rows
-            Array.from(tbody.children).forEach((child: any, i) => {
-              const isSelected = selectedIndices.has(i);
-              if (isSelected) {
-                child.style.background = 'var(--vscode-list-activeSelectionBackground)';
-                child.style.color = 'var(--vscode-list-activeSelectionForeground)';
-              } else {
-                child.style.background = i % 2 === 0 ? 'transparent' : 'rgba(128, 128, 128, 0.04)';
-                child.style.color = 'var(--vscode-editor-foreground)';
-              }
-            });
-            updateActionsVisibility();
-          });
-
-          tr.addEventListener('mouseenter', () => {
-            if (!selectedIndices.has(index)) {
-              tr.style.background = 'var(--vscode-list-hoverBackground)';
-            }
-          });
-
-          tr.addEventListener('mouseleave', () => {
-            if (!selectedIndices.has(index)) {
-              tr.style.background = index % 2 === 0 ? 'transparent' : 'rgba(128, 128, 128, 0.04)';
-            }
-          });
-
-          // Selection Cell
-          const selectTd = document.createElement('td');
-          selectTd.style.borderBottom = '1px solid var(--vscode-widget-border)';
-          selectTd.style.borderRight = '1px solid var(--vscode-widget-border)';
-          selectTd.style.textAlign = 'center';
-          selectTd.style.fontSize = '10px';
-          selectTd.style.color = 'var(--vscode-descriptionForeground)';
-          selectTd.textContent = String(index + 1);
-          tr.appendChild(selectTd);
-
-          columns.forEach((col: string) => {
-            const td = document.createElement('td');
-            const val = row[col];
-            const colType = columnTypes ? columnTypes[col] : undefined;
-            const { text, isNull, type } = formatValue(val, colType);
-            const cellKey = `${index}-${col}`;
-            const isModified = modifiedCells.has(cellKey);
-
-            // Debug: Log modified cell detection
-            if (isModified) {
-              console.log('Renderer: Rendering modified cell with highlight:', cellKey);
-            }
-
-            td.style.padding = '6px 12px';
-            td.style.borderBottom = '1px solid var(--vscode-widget-border)';
-            td.style.borderRight = '1px solid var(--vscode-widget-border)';
-            td.style.textAlign = 'left'; // Ensure left alignment for all cells
-            td.style.maxWidth = '400px'; // Prevent columns from stretching too wide
-            td.style.overflow = 'hidden'; // Prevent text overflow
-            td.style.textOverflow = 'ellipsis'; // Show ... for overflow
-            td.style.whiteSpace = 'nowrap'; // Don't wrap text
-            td.style.backgroundColor = 'var(--vscode-editor-background)'; // Solid background to prevent overlap
-
-            // Set cursor based on editability
-            const isPrimaryKey = tableInfo?.primaryKeys?.includes(col);
-            td.style.cursor = tableInfo && !isPrimaryKey ? 'text' : 'default';
-            if (isPrimaryKey) {
-              td.style.backgroundColor = 'rgba(128, 128, 128, 0.1)';
-              td.title = 'Primary key - cannot be edited';
-            }
-
-            // Highlight modified cells - apply AFTER base styles and make more visible
-            if (isModified) {
-              td.style.backgroundColor = '#fff3cd'; // Brighter yellow background
-              td.style.borderLeft = '4px solid #ffc107';
-              td.style.color = '#856404'; // Darker text for contrast
-              td.setAttribute('data-modified', 'true');
-            }
-
-            // Function to enable editing
-            const enableEditing = (e: Event) => {
-              e.stopPropagation();
-              if (!tableInfo) return; // Only allow editing if we have table info
-              if (currentlyEditingCell === td) return; // Already editing this cell
-
-              // Don't allow editing primary key columns
-              if (tableInfo.primaryKeys && tableInfo.primaryKeys.includes(col)) {
-                console.log('Renderer: Cannot edit primary key column:', col);
-                return;
-              }
-
-              // Close any other editing cell
-              if (currentlyEditingCell) {
-                const existingInput = currentlyEditingCell.querySelector('input, textarea');
-                if (existingInput) {
-                  (existingInput as HTMLElement).blur();
-                }
-              }
-
-              currentlyEditingCell = td;
-              const currentValue = currentRows[index][col];
-              const isJsonType = type === 'json' || type === 'object';
-              const isBoolType = type === 'boolean';
-
-              td.innerHTML = '';
-
-              if (isBoolType) {
-                // For boolean, use a checkbox
-                const checkbox = document.createElement('input');
-                checkbox.type = 'checkbox';
-                checkbox.checked = currentValue === true;
-                checkbox.style.width = '18px';
-                checkbox.style.height = '18px';
-                checkbox.style.cursor = 'pointer';
-
-                checkbox.addEventListener('change', () => {
-                  const newValue = checkbox.checked;
-                  if (newValue !== originalRows[index][col]) {
-                    modifiedCells.set(cellKey, { originalValue: originalRows[index][col], newValue });
-                  } else {
-                    modifiedCells.delete(cellKey);
-                  }
-                  currentRows[index][col] = newValue;
-                  updateSaveButtonVisibility();
-                  currentlyEditingCell = null;
-                  updateTable();
-                });
-
-                td.appendChild(checkbox);
-                checkbox.focus();
-              } else if (isJsonType) {
-                // For JSON, use textarea with buttons
-                const editContainer = document.createElement('div');
-                editContainer.style.display = 'flex';
-                editContainer.style.flexDirection = 'column';
-                editContainer.style.gap = '4px';
-                editContainer.style.width = '100%';
-
-                const textarea = document.createElement('textarea');
-                textarea.value = typeof currentValue === 'object' ? JSON.stringify(currentValue, null, 2) : (currentValue || '');
-                textarea.style.width = '100%';
-                textarea.style.minWidth = '200px';
-                textarea.style.minHeight = '80px';
-                textarea.style.padding = '4px';
-                textarea.style.border = '1px solid var(--vscode-focusBorder)';
-                textarea.style.borderRadius = '3px';
-                textarea.style.backgroundColor = 'var(--vscode-input-background)';
-                textarea.style.color = 'var(--vscode-input-foreground)';
-                textarea.style.fontFamily = 'var(--vscode-editor-font-family)';
-                textarea.style.fontSize = '12px';
-                textarea.style.resize = 'both';
-
-                const saveEdit = () => {
-                  console.log('JSON saveEdit called for cell:', cellKey);
-                  let newValue: any;
-                  try {
-                    newValue = JSON.parse(textarea.value);
-                    console.log('Parsed JSON successfully:', newValue);
-                  } catch (err) {
-                    console.warn('JSON parse failed, saving as string:', err);
-                    newValue = textarea.value;
-                  }
-
-                  const originalValue = originalRows[index][col];
-                  console.log('Original value:', originalValue);
-                  console.log('New value:', newValue);
-                  console.log('Are they different?', JSON.stringify(newValue) !== JSON.stringify(originalValue));
-
-                  if (JSON.stringify(newValue) !== JSON.stringify(originalValue)) {
-                    modifiedCells.set(cellKey, { originalValue, newValue });
-                    console.log('Added to modified cells:', cellKey);
-                  } else {
-                    modifiedCells.delete(cellKey);
-                    console.log('Values are same, removed from modified cells');
-                  }
-                  currentRows[index][col] = newValue;
-                  updateSaveButtonVisibility();
-                  currentlyEditingCell = null;
-                  updateTable();
-                  console.log('JSON save completed, table updated');
-                };
-
-                const cancelEdit = () => {
-                  currentlyEditingCell = null;
-                  updateTable();
-                };
-
-                // Button container
-                const buttonContainer = document.createElement('div');
-                buttonContainer.style.display = 'flex';
-                buttonContainer.style.gap = '4px';
-                buttonContainer.style.justifyContent = 'flex-end';
-
-                // Save button
-                const saveBtn = document.createElement('button');
-                saveBtn.textContent = '✓ Save';
-                saveBtn.style.padding = '4px 12px';
-                saveBtn.style.backgroundColor = 'var(--vscode-button-background)';
-                saveBtn.style.color = 'var(--vscode-button-foreground)';
-                saveBtn.style.border = 'none';
-                saveBtn.style.borderRadius = '3px';
-                saveBtn.style.cursor = 'pointer';
-                saveBtn.style.fontSize = '12px';
-                saveBtn.addEventListener('click', (e) => {
-                  e.stopPropagation();
-                  saveEdit();
-                });
-
-                // Cancel button
-                const cancelBtn = document.createElement('button');
-                cancelBtn.textContent = '✕ Cancel';
-                cancelBtn.style.padding = '4px 12px';
-                cancelBtn.style.backgroundColor = 'var(--vscode-button-secondaryBackground)';
-                cancelBtn.style.color = 'var(--vscode-button-secondaryForeground)';
-                cancelBtn.style.border = 'none';
-                cancelBtn.style.borderRadius = '3px';
-                cancelBtn.style.cursor = 'pointer';
-                cancelBtn.style.fontSize = '12px';
-                cancelBtn.addEventListener('click', (e) => {
-                  e.stopPropagation();
-                  cancelEdit();
-                });
-
-                buttonContainer.appendChild(saveBtn);
-                buttonContainer.appendChild(cancelBtn);
-
-                // Keyboard shortcuts (Alt+Enter to save, not Ctrl+Enter which runs notebook cell)
-                textarea.addEventListener('keydown', (e) => {
-                  if (e.key === 'Escape') {
-                    e.preventDefault();
-                    cancelEdit();
-                  } else if (e.altKey && e.key === 'Enter') {
-                    // Alt+Enter to save (won't conflict with notebook)
-                    e.preventDefault();
-                    saveEdit();
-                  }
-                });
-
-                editContainer.appendChild(textarea);
-                editContainer.appendChild(buttonContainer);
-                td.appendChild(editContainer);
-                textarea.focus();
-              } else {
-                // For other types, use input
-                const input = document.createElement('input');
-                input.type = 'text';
-                input.value = currentValue === null ? '' : String(currentValue);
-                input.style.width = '100%';
-                input.style.minWidth = '50px';
-                input.style.padding = '4px';
-                input.style.border = '1px solid var(--vscode-focusBorder)';
-                input.style.borderRadius = '3px';
-                input.style.backgroundColor = 'var(--vscode-input-background)';
-                input.style.color = 'var(--vscode-input-foreground)';
-                input.style.fontFamily = 'inherit';
-                input.style.fontSize = 'inherit';
-                input.placeholder = 'NULL';
-
-                const saveEdit = () => {
-                  let newValue: any = input.value;
-
-                  // Handle NULL
-                  if (newValue === '' || newValue.toUpperCase() === 'NULL') {
-                    newValue = null;
-                  } else if (colType) {
-                    // Try to parse based on type
-                    const lowerType = colType.toLowerCase();
-                    if (lowerType.includes('int') || lowerType === 'numeric' || lowerType === 'decimal' || lowerType === 'real' || lowerType.includes('float') || lowerType.includes('double')) {
-                      const num = parseFloat(newValue);
-                      if (!isNaN(num)) newValue = num;
-                    }
-                  }
-
-                  const originalValue = originalRows[index][col];
-                  // Use string comparison to handle type coercion issues
-                  const strNew = newValue === null ? 'null' : String(newValue);
-                  const strOrig = originalValue === null ? 'null' : String(originalValue);
-                  console.log('Renderer: Comparing values', { cellKey, newValue, originalValue, strNew, strOrig, isEqual: strNew === strOrig });
-
-                  if (strNew !== strOrig) {
-                    console.log('Renderer: Cell modified, adding to modifiedCells:', cellKey);
-                    modifiedCells.set(cellKey, { originalValue, newValue });
-                  } else {
-                    console.log('Renderer: Cell unchanged, removing from modifiedCells:', cellKey);
-                    modifiedCells.delete(cellKey);
-                  }
-                  currentRows[index][col] = newValue;
-                  console.log('Renderer: modifiedCells now has', modifiedCells.size, 'entries:', Array.from(modifiedCells.keys()));
-                  updateSaveButtonVisibility();
-                  currentlyEditingCell = null;
-                  updateTable();
-                };
-
-                input.addEventListener('blur', saveEdit);
-                input.addEventListener('keydown', (e) => {
-                  if (e.key === 'Enter') {
-                    saveEdit();
-                  } else if (e.key === 'Escape') {
-                    currentlyEditingCell = null;
-                    updateTable();
-                  }
-                });
-
-                td.appendChild(input);
-                input.focus();
-                input.select();
-              }
-            };
-
-            if (isNull) {
-              td.textContent = text;
-              td.style.color = 'var(--vscode-descriptionForeground)';
-              td.style.fontStyle = 'italic';
-              td.style.fontSize = '0.9em';
-              if (tableInfo) td.addEventListener('dblclick', enableEditing);
-            } else if (type === 'number') {
-              td.textContent = text;
-              td.style.fontFamily = 'var(--vscode-editor-font-family)'; // Monospace for numbers
-              if (tableInfo) td.addEventListener('dblclick', enableEditing);
-            } else if (type === 'boolean') {
-              // Custom styled checkbox for better visibility
-              const checkboxContainer = document.createElement('span');
-              checkboxContainer.style.display = 'inline-flex';
-              checkboxContainer.style.alignItems = 'center';
-              checkboxContainer.style.justifyContent = 'center';
-              checkboxContainer.style.width = '16px';
-              checkboxContainer.style.height = '16px';
-              checkboxContainer.style.borderRadius = '3px';
-              checkboxContainer.style.border = '2px solid';
-              checkboxContainer.style.fontSize = '14px';
-              checkboxContainer.style.fontWeight = 'bold';
-              checkboxContainer.style.cursor = tableInfo ? 'pointer' : 'default';
-
-              if (val) {
-                checkboxContainer.style.backgroundColor = '#498f56ff';
-                checkboxContainer.style.borderColor = '#51aa61ff';
-                checkboxContainer.style.color = '#ffffff';
-                checkboxContainer.textContent = '✓';
-              } else {
-                checkboxContainer.style.backgroundColor = 'transparent';
-                checkboxContainer.style.borderColor = '#6e7681';
-                checkboxContainer.style.color = 'transparent';
-                checkboxContainer.textContent = '';
-              }
-
-              // Allow clicking to toggle boolean
-              if (tableInfo) {
-                checkboxContainer.addEventListener('click', (e) => {
-                  e.stopPropagation();
-                  const newValue = !val;
-                  if (newValue !== originalRows[index][col]) {
-                    modifiedCells.set(cellKey, { originalValue: originalRows[index][col], newValue });
-                  } else {
-                    modifiedCells.delete(cellKey);
-                  }
-                  currentRows[index][col] = newValue;
-                  updateSaveButtonVisibility();
-                  updateTable();
-                });
-              }
-
-              td.appendChild(checkboxContainer);
-            } else if (type === 'json' || type === 'object') {
-              // Create a clickable JSON preview
-              const jsonContainer = document.createElement('div');
-              jsonContainer.style.display = 'flex';
-              jsonContainer.style.alignItems = 'center';
-              jsonContainer.style.gap = '6px';
-
-              const jsonIcon = document.createElement('span');
-              jsonIcon.textContent = '{ }';
-              jsonIcon.style.backgroundColor = 'var(--vscode-badge-background)';
-              jsonIcon.style.color = 'var(--vscode-badge-foreground)';
-              jsonIcon.style.padding = '2px 6px';
-              jsonIcon.style.borderRadius = '4px';
-              jsonIcon.style.fontSize = '10px';
-              jsonIcon.style.fontWeight = '600';
-              jsonIcon.style.fontFamily = 'var(--vscode-editor-font-family)';
-              jsonIcon.style.cursor = 'pointer';
-              jsonIcon.title = 'Click to view JSON';
-
-              // Only the icon opens the modal
-              jsonIcon.addEventListener('click', (e) => {
-                e.stopPropagation();
-                showJsonModal(val, col);
-              });
-
-              // Hover effect for icon
-              jsonIcon.addEventListener('mouseenter', () => {
-                jsonIcon.style.opacity = '0.8';
-              });
-              jsonIcon.addEventListener('mouseleave', () => {
-                jsonIcon.style.opacity = '1';
-              });
-
-              const preview = document.createElement('span');
-              // Store full JSON - let CSS ellipsis handle truncation
-              const jsonStr = typeof val === 'string' ? val : JSON.stringify(val);
-              preview.textContent = jsonStr; // Full content, CSS will handle truncation
-              preview.style.fontFamily = 'var(--vscode-editor-font-family)';
-              preview.style.fontSize = '12px';
-              preview.style.color = 'var(--vscode-editor-foreground)';
-              preview.style.overflow = 'hidden';
-              preview.style.textOverflow = 'ellipsis';
-              preview.style.whiteSpace = 'nowrap';
-              preview.style.flex = '1'; // Take remaining space
-              preview.style.minWidth = '0'; // Allow flex shrinking
-
-              jsonContainer.appendChild(jsonIcon);
-              jsonContainer.appendChild(preview);
-
-              td.appendChild(jsonContainer);
-
-              // Double-click on the cell (not just container) to edit
-              if (tableInfo) {
-                td.addEventListener('dblclick', enableEditing);
-                td.title = 'Double-click to edit';
-              }
-            } else if (type === 'timestamp' || type === 'date' || type === 'time') {
-              // Date/Time - use column-level display mode
-              const showLocal = dateTimeDisplayMode.get(col) ?? true;
-              const originalValue = String(val); // The raw value from database
-
-              td.textContent = showLocal ? text : originalValue;
-              td.style.fontFamily = 'var(--vscode-editor-font-family)';
-
-              if (tableInfo) td.addEventListener('dblclick', enableEditing);
-            } else {
-              td.textContent = text;
-              if (tableInfo) td.addEventListener('dblclick', enableEditing);
-            }
-
-            tr.appendChild(td);
-          });
-          tbody.appendChild(tr);
-        });
 
         table.appendChild(thead);
-        table.appendChild(tbody);
+        table.appendChild(tableBody);
         tableContainer.appendChild(table);
+
+        renderNextChunk();
       };
 
       updateTable();

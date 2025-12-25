@@ -1,5 +1,6 @@
-import { Client } from 'pg';
+import { Client, PoolClient } from 'pg';
 import * as vscode from 'vscode';
+import * as path from 'path';
 import { ConnectionManager } from '../services/ConnectionManager';
 
 // Key format for favorites: "type:connectionId:database:schema:name"
@@ -106,7 +107,7 @@ export class DatabaseTreeProvider implements vscode.TreeDataProvider<DatabaseTre
   }
 
   private isFavoriteItem(type: string, connectionId?: string, databaseName?: string, schema?: string, name?: string): boolean {
-    const key = `${type}:${connectionId || ''}:${databaseName || ''}:${schema || ''}:${name || ''}`;
+    const key = `${type}:${connectionId || ''}:${databaseName || ''}:${schema || ''}:${name || ''} `;
     return this._favorites.has(key);
   }
 
@@ -148,7 +149,7 @@ export class DatabaseTreeProvider implements vscode.TreeDataProvider<DatabaseTre
     if (!element) {
       // Root level - show connections
       return connections.map(conn => new DatabaseTreeItem(
-        conn.name || `${conn.host}:${conn.port}`,
+        conn.name || `${conn.host}:${conn.port} `,
         vscode.TreeItemCollapsibleState.Collapsed,
         'connection',
         conn.id,
@@ -166,25 +167,31 @@ export class DatabaseTreeProvider implements vscode.TreeDataProvider<DatabaseTre
 
     // Auto-connect on expansion: if connection is disconnected, mark it as connected
     if (element.type === 'connection' && element.connectionId && this.disconnectedConnections.has(element.connectionId)) {
-      console.log(`Connection ${element.connectionId} is being expanded, auto-connecting...`);
+      console.log(`Connection ${element.connectionId} is being expanded, auto - connecting...`);
       this.markConnectionConnected(element.connectionId);
     }
 
     const connection = connections.find(c => c.id === element.connectionId);
     if (!connection) {
-      console.error(`Connection not found for ID: ${element.connectionId}`);
+      console.error(`Connection not found for ID: ${element.connectionId} `);
       vscode.window.showErrorMessage('Connection configuration not found');
       return [];
     }
 
-    let client: Client | undefined;
+    let client: PoolClient | undefined;
     try {
       const dbName = element.type === 'connection' ? 'postgres' : element.databaseName;
 
       console.log(`Attempting to connect to ${connection.name} (${dbName})`);
 
-      // Use ConnectionManager to get a shared connection
-      client = await ConnectionManager.getInstance().getConnection({
+      // Use ConnectionManager to get a shared pooled client
+      // We must cast to any to handle the _originalEnd logic if we were using getConnection, 
+      // but here we switch to getPooledClient and will call release() explicitly or let the helper handle it.
+      // However, getChildren seems to assume it can hold onto 'client'?
+      // Wait, getChildren logic is: get client, run query, return items. It doesn't seem to pass client to items.
+      // So we should acquire, query, release.
+
+      client = await ConnectionManager.getInstance().getPooledClient({
         id: connection.id,
         host: connection.host,
         port: connection.port,
@@ -193,7 +200,7 @@ export class DatabaseTreeProvider implements vscode.TreeDataProvider<DatabaseTre
         name: connection.name
       });
 
-      console.log(`Successfully connected to ${connection.name}`);
+      console.log(`Successfully connected to ${connection.name} `);
 
       switch (element.type) {
         case 'connection':
@@ -266,7 +273,7 @@ export class DatabaseTreeProvider implements vscode.TreeDataProvider<DatabaseTre
               schemaName,
               itemName,    // tableName - also just the name
               undefined,   // columnName
-              `${schemaName}.${dbName}`, // comment - for tooltip
+              `${schemaName}.${dbName} `, // comment - for tooltip
               undefined,   // isInstalled
               undefined,   // installedVersion
               undefined,   // roleAttributes
@@ -307,7 +314,7 @@ export class DatabaseTreeProvider implements vscode.TreeDataProvider<DatabaseTre
               schemaName,
               itemName,
               undefined,   // columnName
-              `${schemaName}.${dbName}`, // comment - for tooltip
+              `${schemaName}.${dbName} `, // comment - for tooltip
               undefined,   // isInstalled
               undefined,   // installedVersion
               undefined,   // roleAttributes
@@ -347,9 +354,9 @@ export class DatabaseTreeProvider implements vscode.TreeDataProvider<DatabaseTre
 
               case 'Constraints':
                 const constraintResult = await client.query(
-                  `SELECT 
-                                        tc.constraint_name,
-                                        tc.constraint_type
+                  `SELECT
+tc.constraint_name,
+  tc.constraint_type
                                     FROM information_schema.table_constraints tc
                                     WHERE tc.table_schema = $1 AND tc.table_name = $2
                                     ORDER BY tc.constraint_type, tc.constraint_name`,
@@ -369,10 +376,10 @@ export class DatabaseTreeProvider implements vscode.TreeDataProvider<DatabaseTre
 
               case 'Indexes':
                 const indexResult = await client.query(
-                  `SELECT 
-                                        i.relname as index_name,
-                                        ix.indisunique as is_unique,
-                                        ix.indisprimary as is_primary
+                  `SELECT
+i.relname as index_name,
+  ix.indisunique as is_unique,
+  ix.indisprimary as is_primary
                                     FROM pg_index ix
                                     JOIN pg_class i ON i.oid = ix.indexrelid
                                     JOIN pg_class t ON t.oid = ix.indrelid
@@ -401,10 +408,10 @@ export class DatabaseTreeProvider implements vscode.TreeDataProvider<DatabaseTre
             case 'Users & Roles':
               const roleResult = await client.query(
                 `SELECT r.rolname,
-                                        r.rolsuper,
-                                        r.rolcreatedb,
-                                        r.rolcreaterole,
-                                        r.rolcanlogin
+  r.rolsuper,
+  r.rolcreatedb,
+  r.rolcreaterole,
+  r.rolcanlogin
                                  FROM pg_roles r
                                  ORDER BY r.rolname`
               );
@@ -434,12 +441,12 @@ export class DatabaseTreeProvider implements vscode.TreeDataProvider<DatabaseTre
                                  FROM pg_namespace 
                                  WHERE nspname NOT LIKE 'pg_%' 
                                    AND nspname != 'information_schema'
-                                 ORDER BY 
-                                    CASE 
+                                 ORDER BY
+CASE 
                                         WHEN nspname = 'public' THEN 0
                                         ELSE 1
-                                    END,
-                                    nspname`
+END,
+  nspname`
               );
 
               // If filter is active, only show schemas that have matching items
@@ -459,7 +466,7 @@ export class DatabaseTreeProvider implements vscode.TreeDataProvider<DatabaseTre
                      WHERE routine_schema = $1 AND routine_type = 'FUNCTION' 
                        AND LOWER(routine_name) LIKE $2
                      LIMIT 1`,
-                    [row.schema_name, `%${this._filterPattern}%`]
+                    [row.schema_name, `% ${this._filterPattern}% `]
                   );
                   if (matchResult.rows.length > 0) {
                     filteredSchemas.push(new DatabaseTreeItem(
@@ -487,10 +494,10 @@ export class DatabaseTreeProvider implements vscode.TreeDataProvider<DatabaseTre
             case 'Extensions':
               const extensionResult = await client.query(
                 `SELECT e.name,
-                                        e.installed_version,
-                                        e.default_version,
-                                        e.comment,
-                                        CASE WHEN e.installed_version IS NOT NULL THEN true ELSE false END as is_installed
+  e.installed_version,
+  e.default_version,
+  e.comment,
+  CASE WHEN e.installed_version IS NOT NULL THEN true ELSE false END as is_installed
                                  FROM pg_available_extensions e
                                  ORDER BY is_installed DESC, name`
               );
@@ -655,7 +662,7 @@ export class DatabaseTreeProvider implements vscode.TreeDataProvider<DatabaseTre
 
         case 'schema':
           // Query counts for each category (with filter applied if active)
-          const filterPattern = this._filterPattern ? `%${this._filterPattern.toLowerCase()}%` : null;
+          const filterPattern = this._filterPattern ? `% ${this._filterPattern.toLowerCase()}% ` : null;
 
           const tablesCountResult = await client.query(
             filterPattern
@@ -696,12 +703,12 @@ export class DatabaseTreeProvider implements vscode.TreeDataProvider<DatabaseTre
           );
 
           return [
-            new DatabaseTreeItem(`Tables • ${tablesCountResult.rows[0].count}`, vscode.TreeItemCollapsibleState.Collapsed, 'category', element.connectionId, element.databaseName, element.schema),
-            new DatabaseTreeItem(`Views • ${viewsCountResult.rows[0].count}`, vscode.TreeItemCollapsibleState.Collapsed, 'category', element.connectionId, element.databaseName, element.schema),
-            new DatabaseTreeItem(`Functions • ${functionsCountResult.rows[0].count}`, vscode.TreeItemCollapsibleState.Collapsed, 'category', element.connectionId, element.databaseName, element.schema),
-            new DatabaseTreeItem(`Materialized Views • ${materializedViewsCountResult.rows[0].count}`, vscode.TreeItemCollapsibleState.Collapsed, 'category', element.connectionId, element.databaseName, element.schema),
-            new DatabaseTreeItem(`Types • ${typesCountResult.rows[0].count}`, vscode.TreeItemCollapsibleState.Collapsed, 'category', element.connectionId, element.databaseName, element.schema),
-            new DatabaseTreeItem(`Foreign Tables • ${foreignTablesCountResult.rows[0].count}`, vscode.TreeItemCollapsibleState.Collapsed, 'category', element.connectionId, element.databaseName, element.schema)
+            new DatabaseTreeItem(`Tables • ${tablesCountResult.rows[0].count} `, vscode.TreeItemCollapsibleState.Collapsed, 'category', element.connectionId, element.databaseName, element.schema),
+            new DatabaseTreeItem(`Views • ${viewsCountResult.rows[0].count} `, vscode.TreeItemCollapsibleState.Collapsed, 'category', element.connectionId, element.databaseName, element.schema),
+            new DatabaseTreeItem(`Functions • ${functionsCountResult.rows[0].count} `, vscode.TreeItemCollapsibleState.Collapsed, 'category', element.connectionId, element.databaseName, element.schema),
+            new DatabaseTreeItem(`Materialized Views • ${materializedViewsCountResult.rows[0].count} `, vscode.TreeItemCollapsibleState.Collapsed, 'category', element.connectionId, element.databaseName, element.schema),
+            new DatabaseTreeItem(`Types • ${typesCountResult.rows[0].count} `, vscode.TreeItemCollapsibleState.Collapsed, 'category', element.connectionId, element.databaseName, element.schema),
+            new DatabaseTreeItem(`Foreign Tables • ${foreignTablesCountResult.rows[0].count} `, vscode.TreeItemCollapsibleState.Collapsed, 'category', element.connectionId, element.databaseName, element.schema)
           ];
 
         case 'table':
@@ -762,17 +769,24 @@ export class DatabaseTreeProvider implements vscode.TreeDataProvider<DatabaseTre
     } catch (err: any) {
       const errorMessage = err.message || err.toString() || 'Unknown error';
       const errorCode = err.code || 'NO_CODE';
-      const errorDetails = `Error getting tree items for ${element?.type || 'root'}: [${errorCode}] ${errorMessage}`;
+      const errorDetails = `Error getting tree items for ${element?.type || 'root'}: [${errorCode}] ${errorMessage} `;
 
       console.error(errorDetails);
       console.error('Full error:', err);
 
       // Only show error message to user if it's not a connection initialization issue
       if (element && element.type !== 'connection') {
-        vscode.window.showErrorMessage(`Failed to get tree items: ${errorMessage}`);
+        vscode.window.showErrorMessage(`Failed to get tree items: ${errorMessage} `);
       }
 
       return [];
+    } finally {
+      // Release the pooled client
+      if (client) {
+        try {
+          client.release();
+        } catch (e) { console.error('Error releasing client', e); }
+      }
     }
     // Do NOT close the client here, as it is managed by ConnectionManager
   }
@@ -800,13 +814,13 @@ export class DatabaseTreeItem extends vscode.TreeItem {
     if (type === 'category' && label) {
       // Create specific context value for categories (e.g., category-tables, category-views)
       const suffix = label.toLowerCase().replace(/\s+&\s+/g, '-').replace(/\s+/g, '-');
-      this.contextValue = `category-${suffix}`;
+      this.contextValue = `category - ${suffix} `;
     } else if (type === 'connection' && isDisconnected) {
       this.contextValue = 'connection-disconnected';
     } else {
       // Keep original contextValue - isFavorite flag is stored separately for star indicator
       // For favorites menu detection, we use description containing ★
-      this.contextValue = isInstalled ? `${type}-installed` : type;
+      this.contextValue = isInstalled ? `${type} -installed` : type;
     }
     this.tooltip = this.getTooltip(type, comment, roleAttributes);
     this.description = this.getDescription(type, isInstalled, installedVersion, roleAttributes, isFavorite, count);
@@ -842,9 +856,9 @@ export class DatabaseTreeItem extends vscode.TreeItem {
       if (roleAttributes.rolcreatedb) attributes.push('Create DB');
       if (roleAttributes.rolcreaterole) attributes.push('Create Role');
       if (roleAttributes.rolcanlogin) attributes.push('Can Login');
-      return `${this.label}\n\nAttributes:\n${attributes.join('\n')}`;
+      return `${this.label} \n\nAttributes: \n${attributes.join('\n')} `;
     }
-    return comment ? `${this.label}\n\n${comment}` : this.label;
+    return comment ? `${this.label} \n\n${comment} ` : this.label;
   }
 
   private getDescription(type: string, isInstalled?: boolean, installedVersion?: string, roleAttributes?: { [key: string]: boolean }, isFavorite?: boolean, count?: number): string | undefined {

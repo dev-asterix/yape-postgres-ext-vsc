@@ -1,4 +1,4 @@
-import { Client } from 'pg';
+import { Client, Pool, PoolClient, ClientConfig, PoolConfig } from 'pg';
 import * as fs from 'fs';
 import { ConnectionConfig } from '../common/types';
 import { SecretStorageService } from './SecretStorageService';
@@ -6,7 +6,8 @@ import { SSHService } from './SSHService';
 
 export class ConnectionManager {
   private static instance: ConnectionManager;
-  private connections: Map<string, Client> = new Map();
+  private pools: Map<string, Pool> = new Map();
+  private sessions: Map<string, Client> = new Map();
 
   private constructor() { }
 
@@ -17,55 +18,190 @@ export class ConnectionManager {
     return ConnectionManager.instance;
   }
 
-  public async getConnection(config: ConnectionConfig): Promise<Client> {
+  /**
+   * Get a pooled client for ephemeral operations (metadata, autocomplete, etc.)
+   * Callers MUST release the client when done.
+   */
+  public async getPooledClient(config: ConnectionConfig): Promise<PoolClient> {
     const key = this.getConnectionKey(config);
 
-    if (this.connections.has(key)) {
-      const client = this.connections.get(key)!;
-      // Simple check if connection is still alive (optional, pg client handles some of this)
-      // For now, we assume it's good or will throw on query, handling reconnection could be added here
+    let pool = this.pools.get(key);
+    if (!pool) {
+      const clientConfig = await this.createClientConfig(config);
+      // Pool specific configuration
+      const poolConfig: PoolConfig = {
+        ...clientConfig,
+        max: 10, // Max connections per config
+        idleTimeoutMillis: 30000 // Close idle clients after 30s
+      };
+
+      pool = new Pool(poolConfig);
+
+      pool.on('error', (err) => {
+        console.error(`Unexpected error on idle client for ${key}`, err);
+        // Don't remove pool, just log. Connection issues will be caught on next checkout.
+      });
+
+      this.pools.set(key, pool);
+    }
+
+    return await pool.connect();
+  }
+
+  /**
+   * Get a persistent client for a specific session (Notebooks, Transactions).
+   * Caller is responsible for eventually closing this session calling removeSession.
+   */
+  public async getSessionClient(config: ConnectionConfig, sessionId: string): Promise<Client> {
+    const key = `${this.getConnectionKey(config)}:session:${sessionId}`;
+
+    if (this.sessions.has(key)) {
+      const client = this.sessions.get(key)!;
+      // Should add a liveness check here ideally
       return client;
     }
 
+    const clientConfig = await this.createClientConfig(config);
+    const client = new Client(clientConfig);
+
+    await client.connect();
+
+    client.on('end', () => this.sessions.delete(key));
+    client.on('error', (err) => {
+      console.error(`Session client error for ${key}`, err);
+      this.sessions.delete(key);
+    });
+
+    this.sessions.set(key, client);
+    return client;
+  }
+
+
+
+  public async closeSession(config: ConnectionConfig, sessionId: string): Promise<void> {
+    const key = `${this.getConnectionKey(config)}:session:${sessionId}`;
+    const client = this.sessions.get(key);
+    if (client) {
+      try {
+        // Restore original end if present (unlikely for session client but good practice)
+        await client.end();
+      } catch (e) {
+        console.error(`Error closing session ${key}:`, e);
+      } finally {
+        this.sessions.delete(key);
+      }
+    }
+  }
+
+  /**
+   * Close all pools and sessions for a given connection ID (e.g. on disconnect/edit)
+   */
+  public async closeConnection(config: ConnectionConfig): Promise<void> {
+    const baseKey = this.getConnectionKey(config);
+
+    // Close Pool
+    const pool = this.pools.get(baseKey);
+    if (pool) {
+      try {
+        await pool.end();
+      } catch (e) { console.error(`Error closing pool ${baseKey}`, e); }
+      this.pools.delete(baseKey);
+    }
+
+    // Close all related sessions
+    for (const [key, client] of this.sessions.entries()) {
+      if (key.startsWith(baseKey)) {
+        try {
+          await client.end();
+        } catch (e) { console.error(`Error closing session ${key}`, e); }
+        this.sessions.delete(key);
+      }
+    }
+  }
+
+  // Helper to remove all connections for a connection ID regardless of DB
+  public async closeAllConnectionsById(connectionId: string): Promise<void> {
+    // Create a list of keys to remove to avoid modification during iteration
+    const poolKeysToRemove: string[] = [];
+    for (const key of this.pools.keys()) {
+      if (key.startsWith(`${connectionId}:`)) {
+        poolKeysToRemove.push(key);
+      }
+    }
+
+    for (const key of poolKeysToRemove) {
+      const pool = this.pools.get(key);
+      if (pool) {
+        await pool.end().catch(e => console.error(`Error ending pool ${key}`, e));
+        this.pools.delete(key);
+      }
+    }
+
+    const sessionKeysToRemove: string[] = [];
+    for (const key of this.sessions.keys()) {
+      // keys are "id:db:session:sessId"
+      if (key.startsWith(`${connectionId}:`)) {
+        sessionKeysToRemove.push(key);
+      }
+    }
+
+    for (const key of sessionKeysToRemove) {
+      const client = this.sessions.get(key);
+      if (client) {
+        await client.end().catch(e => console.error(`Error ending session ${key}`, e));
+        this.sessions.delete(key);
+      }
+    }
+
+    console.log(`Closed resources for ID: ${connectionId}`);
+  }
+
+
+  public async closeAll(): Promise<void> {
+    for (const pool of this.pools.values()) {
+      await pool.end().catch(e => console.error('Error closing pool', e));
+    }
+    this.pools.clear();
+
+    for (const client of this.sessions.values()) {
+      await client.end().catch(e => console.error('Error closing session', e));
+    }
+    this.sessions.clear();
+  }
+
+  private getConnectionKey(config: ConnectionConfig): string {
+    return `${config.id}:${config.database || 'postgres'}`;
+  }
+
+  private async createClientConfig(config: ConnectionConfig): Promise<ClientConfig> {
     // Get password from secret storage if username is provided
     let password: string | undefined;
     if (config.username) {
       password = await SecretStorageService.getInstance().getPassword(config.id);
-      // If username is provided but password is not found in storage, it might still work for some auth methods
     }
 
-    // Build SSL configuration based on sslmode
-    let sslConfig: boolean | object = false;
+    // Build SSL configuration
+    let sslConfig: boolean | any = false;
     if (config.sslmode && config.sslmode !== 'disable') {
       sslConfig = {
         rejectUnauthorized: config.sslmode === 'verify-ca' || config.sslmode === 'verify-full',
       };
 
-      // Add certificate paths if provided
       if (config.sslRootCertPath) {
-        try {
-          (sslConfig as any).ca = fs.readFileSync(config.sslRootCertPath).toString();
-        } catch (e) {
-          console.warn('Failed to read SSL CA certificate:', e);
-        }
+        try { sslConfig.ca = fs.readFileSync(config.sslRootCertPath).toString(); }
+        catch (e) { console.warn('Failed to read SSL CA:', e); }
       }
       if (config.sslCertPath) {
-        try {
-          (sslConfig as any).cert = fs.readFileSync(config.sslCertPath).toString();
-        } catch (e) {
-          console.warn('Failed to read SSL client certificate:', e);
-        }
+        try { sslConfig.cert = fs.readFileSync(config.sslCertPath).toString(); }
+        catch (e) { console.warn('Failed to read SSL Cert:', e); }
       }
       if (config.sslKeyPath) {
-        try {
-          (sslConfig as any).key = fs.readFileSync(config.sslKeyPath).toString();
-        } catch (e) {
-          console.warn('Failed to read SSL client key:', e);
-        }
+        try { sslConfig.key = fs.readFileSync(config.sslKeyPath).toString(); }
+        catch (e) { console.warn('Failed to read SSL Key:', e); }
       }
     }
 
-    const clientConfig: any = {
+    const clientConfig: ClientConfig = {
       user: config.username || undefined,
       password: password || undefined,
       database: config.database || 'postgres',
@@ -73,7 +209,6 @@ export class ConnectionManager {
       statement_timeout: config.statementTimeout || undefined,
       application_name: config.applicationName || 'PgStudio',
       ssl: sslConfig || undefined,
-      // Parse additional options string if provided
       ...(config.options ? { options: config.options } : {})
     };
 
@@ -84,7 +219,7 @@ export class ConnectionManager {
           config.host,
           config.port
         );
-        clientConfig.stream = stream;
+        clientConfig.stream = stream as any;
       } catch (err: any) {
         throw new Error(`SSH Connection failed: ${err.message}`);
       }
@@ -93,72 +228,6 @@ export class ConnectionManager {
       clientConfig.port = config.port;
     }
 
-    const client = new Client(clientConfig);
-
-    await client.connect();
-    this.connections.set(key, client);
-
-    // Remove connection on error/end
-    client.on('end', () => this.connections.delete(key));
-    client.on('error', () => this.connections.delete(key));
-
-    return client;
-  }
-
-  public async closeConnection(config: ConnectionConfig): Promise<void> {
-    const key = this.getConnectionKey(config);
-    const client = this.connections.get(key);
-
-    if (client) {
-      try {
-        await client.end();
-        this.connections.delete(key);
-      } catch (e) {
-        console.error('Error closing connection:', e);
-      }
-    }
-  }
-
-  public async closeAllConnectionsById(connectionId: string): Promise<void> {
-    const keysToClose: string[] = [];
-
-    // Find all connections with this ID
-    for (const key of this.connections.keys()) {
-      if (key.startsWith(`${connectionId}:`)) {
-        keysToClose.push(key);
-      }
-    }
-
-    // Close all found connections
-    for (const key of keysToClose) {
-      const client = this.connections.get(key);
-      if (client) {
-        try {
-          await client.end();
-          this.connections.delete(key);
-        } catch (e) {
-          console.error(`Error closing connection ${key}:`, e);
-        }
-      }
-    }
-
-    console.log(`Closed ${keysToClose.length} connections for ID: ${connectionId}`);
-  }
-
-  public async closeAll(): Promise<void> {
-    for (const client of this.connections.values()) {
-      try {
-        await client.end();
-      } catch (e) {
-        console.error('Error closing connection:', e);
-      }
-    }
-    this.connections.clear();
-  }
-
-  private getConnectionKey(config: ConnectionConfig): string {
-    // Unique key for connection: ID + Database
-    // If database is not specified, it connects to default (usually postgres)
-    return `${config.id}:${config.database || 'postgres'}`;
+    return clientConfig;
   }
 }
