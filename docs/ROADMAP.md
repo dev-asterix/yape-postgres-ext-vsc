@@ -31,14 +31,15 @@
 - [x] Column resizing  
 - [x] Infinite scrolling (200 rows/chunk with IntersectionObserver)
 - [x] Result truncation (10k row limit to prevent crashes)
-- [ ] Cancel button UI (deferred - requires major refactor)
+- [x] Stop generation button UI (integrated with chat)
 
-### 2C: AI Assistant ✅ MOSTLY COMPLETE
+### 2C: AI Assistant ✅ COMPLETE
 - [x] Schema context caching
 - [x] Query history in AI context
 - [x] "Explain this error" feature
 - [x] Data Analysis (with file attachment)
-- [ ] Query optimization suggestions
+- [x] Query optimization & suggest indexes
+- [x] "Send results to Chat" integration
 
 ---
 
