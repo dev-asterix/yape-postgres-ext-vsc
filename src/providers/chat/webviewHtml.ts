@@ -4,9 +4,9 @@
 import * as vscode from 'vscode';
 
 export function getWebviewHtml(webview: vscode.Webview, markedUri: vscode.Uri, highlightJsUri: vscode.Uri, highlightCssUri: vscode.Uri): string {
-    const cspSource = webview.cspSource;
+  const cspSource = webview.cspSource;
 
-    return `<!DOCTYPE html>
+  return `<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -1182,6 +1182,36 @@ export function getWebviewHtml(webview: vscode.Webview, markedUri: vscode.Uri, h
             font-size: 12px;
         }
 
+        .mention-group-header {
+            padding: 6px 12px 4px;
+            font-size: 10px;
+            font-weight: 600;
+            color: var(--vscode-descriptionForeground);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            background: var(--vscode-sideBar-background);
+            border-top: 1px solid var(--vscode-panel-border);
+            position: sticky;
+            top: 0;
+        }
+
+        .mention-group-header:first-child {
+            border-top: none;
+        }
+
+        .mention-picker-more {
+            padding: 8px 12px;
+            font-size: 11px;
+            color: var(--vscode-textLink-foreground);
+            text-align: center;
+            font-style: italic;
+            border-top: 1px solid var(--vscode-panel-border);
+        }
+
+        .mention-item-label {
+            font-family: var(--vscode-font-family);
+        }
+
         .mention-picker-loading {
             padding: 16px;
             text-align: center;
@@ -1417,7 +1447,7 @@ export function getWebviewHtml(webview: vscode.Webview, markedUri: vscode.Uri, h
                 <div class="mention-picker-header">
                     <span>🔗 Reference DB Object</span>
                 </div>
-                <input type="text" class="mention-picker-search" id="mentionSearch" placeholder="Search tables, views, functions..." oninput="searchMentions(this.value)">
+                <input type="text" class="mention-picker-search" id="mentionSearch" placeholder="Search tables, views, functions..." oninput="searchMentions(this.value)" onkeydown="handleMentionSearchKeydown(event)">
                 <div class="mention-picker-list" id="mentionList">
                     <div class="mention-picker-loading">Loading database objects...</div>
                 </div>
@@ -1650,22 +1680,92 @@ export function getWebviewHtml(webview: vscode.Webview, markedUri: vscode.Uri, h
         function renderDbObjects(objects) {
             console.log('[WebView] renderDbObjects called with', objects.length, 'objects');
             dbObjects = objects;
+            
             if (objects.length === 0) {
-                mentionList.innerHTML = '<div class="mention-picker-empty">No database objects found. Connect to a database first.</div>';
+                mentionList.innerHTML = '<div class="mention-picker-empty">No matches found. Try a different search term.</div>';
                 return;
             }
 
             selectedMentionIndex = -1;
-            mentionList.innerHTML = objects.map((obj, idx) => \`
-                <div class="mention-item" data-index="\${idx}" onclick="selectMention(\${idx})" onmouseenter="highlightMention(\${idx})">
-                    <div class="mention-item-name">
-                        <span class="db-type-icon">\${getDbTypeIcon(obj.type)}</span>
-                        <span>\${escapeHtml(obj.name)}</span>
-                        <span class="mention-item-type">\${obj.type}</span>
-                    </div>
-                    <div class="mention-item-breadcrumb">\${escapeHtml(obj.breadcrumb)}</div>
-                </div>
-            \`).join('');
+            
+            // Limit to 20 items for better performance and cleaner display
+            const MAX_DISPLAY = 20;
+            const displayObjects = objects.slice(0, MAX_DISPLAY);
+            const hasMore = objects.length > MAX_DISPLAY;
+            
+            // Group by type for cleaner organization
+            const grouped = {};
+            displayObjects.forEach((obj, originalIdx) => {
+                const type = obj.type || 'other';
+                if (!grouped[type]) grouped[type] = [];
+                grouped[type].push({ ...obj, originalIdx });
+            });
+            
+            // Type order and labels
+            const typeOrder = ['table', 'view', 'materialized-view', 'function', 'type', 'schema'];
+            const typeLabels = {
+                'table': 'Tables',
+                'view': 'Views',
+                'materialized-view': 'Materialized Views',
+                'function': 'Functions',
+                'type': 'Types',
+                'schema': 'Schemas',
+                'other': 'Other'
+            };
+            
+            let html = '';
+            let globalIdx = 0;
+            
+            // Render in type order
+            typeOrder.forEach(type => {
+                if (grouped[type] && grouped[type].length > 0) {
+                    html += '<div class="mention-group-header">' + (typeLabels[type] || type) + ' (' + grouped[type].length + ')</div>';
+                    grouped[type].forEach(obj => {
+                        const idx = globalIdx++;
+                        html += '<div class="mention-item" data-index="' + idx + '" onclick="selectMention(' + idx + ')" onmouseenter="highlightMention(' + idx + ')">' +
+                                    '<div class="mention-item-name">' +
+                                        '<span class="db-type-icon">' + getDbTypeIcon(obj.type) + '</span>' +
+                                        '<span class="mention-item-label">' + escapeHtml(obj.schema) + '.' + escapeHtml(obj.name) + '</span>' +
+                                    '</div>' +
+                                '</div>';
+                    });
+                }
+            });
+            
+            // Handle types not in order
+            Object.keys(grouped).forEach(type => {
+                if (!typeOrder.includes(type) && grouped[type].length > 0) {
+                    html += '<div class="mention-group-header">' + (typeLabels[type] || type) + ' (' + grouped[type].length + ')</div>';
+                    grouped[type].forEach(obj => {
+                        const idx = globalIdx++;
+                        html += '<div class="mention-item" data-index="' + idx + '" onclick="selectMention(' + idx + ')" onmouseenter="highlightMention(' + idx + ')">' +
+                                    '<div class="mention-item-name">' +
+                                        '<span class="db-type-icon">' + getDbTypeIcon(obj.type) + '</span>' +
+                                        '<span class="mention-item-label">' + escapeHtml(obj.schema) + '.' + escapeHtml(obj.name) + '</span>' +
+                                    '</div>' +
+                                '</div>';
+                    });
+                }
+            });
+            
+            if (hasMore) {
+                html += '<div class="mention-picker-more">' + (objects.length - MAX_DISPLAY) + ' more... (refine your search)</div>';
+            }
+            
+            mentionList.innerHTML = html;
+            
+            // Re-map dbObjects to match displayed order
+            dbObjects = [];
+            typeOrder.forEach(type => {
+                if (grouped[type]) {
+                    grouped[type].forEach(obj => dbObjects.push(obj));
+                }
+            });
+            Object.keys(grouped).forEach(type => {
+                if (!typeOrder.includes(type) && grouped[type]) {
+                    grouped[type].forEach(obj => dbObjects.push(obj));
+                }
+            });
         }
 
         function highlightMention(index) {
@@ -1691,66 +1791,66 @@ export function getWebviewHtml(webview: vscode.Webview, markedUri: vscode.Uri, h
             };
 
             // Check if already selected
-            const exists = selectedMentions.find(m => 
-                m.name === mention.name && 
-                m.schema === mention.schema && 
+            const exists = selectedMentions.find(m =>
+                m.name === mention.name &&
+                m.schema === mention.schema &&
                 m.database === mention.database
             );
 
             if (!exists) {
                 selectedMentions.push(mention);
                 renderMentionChips();
-                
+
                 // Insert @mention in textarea
                 const mentionText = '@' + obj.schema + '.' + obj.name;
                 const cursorPos = chatInput.selectionStart;
-                const textBefore = chatInput.value.substring(0, cursorPos);
-                const textAfter = chatInput.value.substring(cursorPos);
-                
-                // Check if there's an incomplete @ mention to replace
-                const atMatch = textBefore.match(/@[\\w.]*$/);
-                if (atMatch) {
-                    chatInput.value = textBefore.substring(0, textBefore.length - atMatch[0].length) + mentionText + ' ' + textAfter;
-                } else {
-                    chatInput.value = textBefore + mentionText + ' ' + textAfter;
-                }
-            }
+    const textBefore = chatInput.value.substring(0, cursorPos);
+    const textAfter = chatInput.value.substring(cursorPos);
 
-            hideMentionPicker();
-            chatInput.focus();
-        }
+    // Check if there's an incomplete @ mention to replace
+    const atMatch = textBefore.match(/@[\\w.]*$/);
+    if (atMatch) {
+      chatInput.value = textBefore.substring(0, textBefore.length - atMatch[0].length) + mentionText + ' ' + textAfter;
+    } else {
+      chatInput.value = textBefore + mentionText + ' ' + textAfter;
+    }
+  }
 
-        function removeMention(index) {
-            selectedMentions.splice(index, 1);
-            renderMentionChips();
-        }
+  hideMentionPicker();
+  chatInput.focus();
+}
 
-        function renderMentionChips() {
-            // Include both files and mentions in the attachments container
-            const hasContent = attachedFiles.length > 0 || selectedMentions.length > 0;
-            
-            if (!hasContent) {
-                attachmentsContainer.classList.remove('has-files');
-                attachmentsContainer.classList.remove('has-mentions');
-                inputWrapper.classList.remove('has-attachments');
-                renderAttachments(); // Just render file chips
-                return;
-            }
+function removeMention(index) {
+  selectedMentions.splice(index, 1);
+  renderMentionChips();
+}
 
-            attachmentsContainer.classList.add('has-files');
-            if (selectedMentions.length > 0) {
-                attachmentsContainer.classList.add('has-mentions');
-            }
-            inputWrapper.classList.add('has-attachments');
+function renderMentionChips() {
+  // Include both files and mentions in the attachments container
+  const hasContent = attachedFiles.length > 0 || selectedMentions.length > 0;
 
-            // Render file chips first, then mention chips
-            attachmentsContainer.innerHTML = '';
-            
-            attachedFiles.forEach((file, index) => {
-                const chip = document.createElement('div');
-                chip.className = 'attachment-chip';
-                const icon = getFileIcon(file.type);
-                chip.innerHTML = \`
+  if (!hasContent) {
+    attachmentsContainer.classList.remove('has-files');
+    attachmentsContainer.classList.remove('has-mentions');
+    inputWrapper.classList.remove('has-attachments');
+    renderAttachments(); // Just render file chips
+    return;
+  }
+
+  attachmentsContainer.classList.add('has-files');
+  if (selectedMentions.length > 0) {
+    attachmentsContainer.classList.add('has-mentions');
+  }
+  inputWrapper.classList.add('has-attachments');
+
+  // Render file chips first, then mention chips
+  attachmentsContainer.innerHTML = '';
+
+  attachedFiles.forEach((file, index) => {
+    const chip = document.createElement('div');
+    chip.className = 'attachment-chip';
+    const icon = getFileIcon(file.type);
+    chip.innerHTML = \`
                     <span class="file-icon">\${icon}</span>
                     <span class="file-name">\${file.name}</span>
                     <button class="remove-btn" onclick="removeAttachment(\${index})" title="Remove file">
@@ -1843,6 +1943,44 @@ export function getWebviewHtml(webview: vscode.Webview, markedUri: vscode.Uri, h
             const selected = mentionList.querySelector('.mention-item.selected');
             if (selected) {
                 selected.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+            }
+        }
+
+        // Keyboard handler specifically for the search input
+        function handleMentionSearchKeydown(event) {
+            if (event.key === 'ArrowDown') {
+                event.preventDefault();
+                if (selectedMentionIndex < 0) {
+                    selectedMentionIndex = 0;
+                } else {
+                    selectedMentionIndex = Math.min(selectedMentionIndex + 1, dbObjects.length - 1);
+                }
+                highlightMention(selectedMentionIndex);
+                scrollMentionIntoView();
+                return;
+            }
+            if (event.key === 'ArrowUp') {
+                event.preventDefault();
+                selectedMentionIndex = Math.max(selectedMentionIndex - 1, 0);
+                highlightMention(selectedMentionIndex);
+                scrollMentionIntoView();
+                return;
+            }
+            if (event.key === 'Enter' && selectedMentionIndex >= 0) {
+                event.preventDefault();
+                selectMention(selectedMentionIndex);
+                return;
+            }
+            if (event.key === 'Escape') {
+                event.preventDefault();
+                hideMentionPicker();
+                chatInput.focus();
+                return;
+            }
+            if (event.key === 'Tab' && selectedMentionIndex >= 0) {
+                event.preventDefault();
+                selectMention(selectedMentionIndex);
+                return;
             }
         }
 
@@ -2394,6 +2532,19 @@ export function getWebviewHtml(webview: vscode.Webview, markedUri: vscode.Uri, h
                     break;
                 case 'notebookResult':
                     handleNotebookResult(message.success, message.error);
+                    break;
+                case 'prefillInput':
+                    // Pre-fill chat input with query from "Chat" button
+                    if (message.message) {
+                        chatInput.value = message.message;
+                        chatInput.style.height = 'auto';
+                        chatInput.style.height = Math.min(chatInput.scrollHeight, 200) + 'px';
+                        chatInput.focus();
+                        // Auto-send if it's a query
+                        if (message.autoSend) {
+                            sendMessage();
+                        }
+                    }
                     break;
             }
         });

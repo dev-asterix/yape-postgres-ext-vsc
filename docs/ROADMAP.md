@@ -61,6 +61,8 @@
 - [x] Backend result truncation (10k row limit)
 - [x] Frontend infinite scrolling (200 rows/chunk)
 - [x] Connection leak prevention (try/finally patterns)
+- [x] Query result streaming (cursor-based batching)
+- [x] Distributed tracing (TelemetryService)
 
 ---
 

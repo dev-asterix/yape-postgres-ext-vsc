@@ -53,10 +53,17 @@ export async function cmdFunctionOperations(item: DatabaseTreeItem, context: vsc
       .addMarkdown('##### 📝 Function Definition')
       .addSql(`-- Current function definition\n${functionInfo.definition} `)
       .addMarkdown('##### 📞 Call Function')
-      .addSql(`-- Call function\nSELECT ${item.schema}.${item.label} (${functionInfo.arguments ?
-        '\n  -- Replace with actual values:\n  ' + functionInfo.arguments.split(',').join(',\n  ')
-        : ''
-        }); `)
+      .addSql(`-- Call function (returns single value)
+SELECT ${item.schema}.${item.label}(${functionInfo.arguments ?
+          '\n  -- Replace with actual values:\n  ' + functionInfo.arguments.split(',').join(',\n  ')
+          : ''
+        });
+
+-- Call function (returns table/set - use for multi-row results)
+SELECT * FROM ${item.schema}.${item.label}(${functionInfo.arguments ?
+          '\n  -- Replace with actual values:\n  ' + functionInfo.arguments.split(',').join(',\n  ')
+          : ''
+        });`)
       .addMarkdown('##### ❌ Drop Function')
       .addSql(SQL_TEMPLATES.DROP.FUNCTION(item.schema!, item.label, functionInfo.arguments || ''))
       .show();
@@ -138,10 +145,17 @@ export async function cmdCallFunction(item: DatabaseTreeItem, context: vscode.Ex
         MarkdownUtils.infoBox('Edit the argument values below and execute the cell to call the function.')
       )
       .addMarkdown('##### 📞 Execution')
-      .addSql(`-- Call function\nSELECT ${item.schema}.${item.label} (${functionInfo.arguments ?
-        '\n  -- Replace with actual values:\n  ' + functionInfo.arguments.split(',').join(',\n  ')
-        : ''
-        }); `)
+      .addSql(`-- Call function (returns single value)
+SELECT ${item.schema}.${item.label}(${functionInfo.arguments ?
+          '\n  -- Replace with actual values:\n  ' + functionInfo.arguments.split(',').join(',\n  ')
+          : ''
+        });
+
+-- Call function (returns table/set - use for multi-row results)
+SELECT * FROM ${item.schema}.${item.label}(${functionInfo.arguments ?
+          '\n  -- Replace with actual values:\n  ' + functionInfo.arguments.split(',').join(',\n  ')
+          : ''
+        });`)
       .show();
   } catch (err: any) {
     await ErrorHandlers.handleCommandError(err, 'create function call notebook');
@@ -322,7 +336,20 @@ ${dependencyRows}
       .addMarkdown('##### 📝 Function Definition')
       .addSql(func.definition)
       .addMarkdown('##### ⚡ Call Function')
-      .addSql(`-- Call function\nSELECT ${item.schema}.${item.label}(${func.arguments ? func.arguments.split(',').map((arg: string, idx: number) => {
+      .addSql(`-- Call function (returns single value)
+SELECT ${item.schema}.${item.label}(${func.arguments ? func.arguments.split(',').map((arg: string, idx: number) => {
+        const parts = arg.trim().split(' ');
+        const type = parts[parts.length - 1];
+        if (type.includes('int')) return `${idx + 1}`;
+        if (type.includes('text') || type.includes('char') || type.includes('varchar')) return `'value${idx + 1}'`;
+        if (type.includes('bool')) return 'true';
+        if (type.includes('date')) return `'2024-01-01'`;
+        if (type.includes('timestamp')) return `'2024-01-01 00:00:00'`;
+        return `'value${idx + 1}'`;
+      }).join(', ') : ''});
+
+-- Call function (returns table/set - use for multi-row results)
+SELECT * FROM ${item.schema}.${item.label}(${func.arguments ? func.arguments.split(',').map((arg: string, idx: number) => {
         const parts = arg.trim().split(' ');
         const type = parts[parts.length - 1];
         if (type.includes('int')) return `${idx + 1}`;

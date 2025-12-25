@@ -1,6 +1,12 @@
 import { createButton } from '../components/ui';
 
-export const createExportButton = (columns: string[], rows: any[], tableInfo: any | undefined) => {
+export const createExportButton = (
+  columns: string[],
+  rows: any[],
+  tableInfo: any | undefined,
+  context?: { postMessage?: (msg: any) => void },
+  originalQuery?: string
+) => {
   const exportBtn = createButton('Export ▼', true);
   exportBtn.style.position = 'relative';
 
@@ -187,6 +193,24 @@ export const createExportButton = (columns: string[], rows: any[], tableInfo: an
         setTimeout(() => exportBtn.textContent = 'Export ▼', 2000);
       });
     }));
+
+    // Add "Export All Data" option if context is available
+    if (context?.postMessage && originalQuery) {
+      const divider = document.createElement('div');
+      divider.style.height = '1px';
+      divider.style.background = 'var(--vscode-menu-separatorBackground)';
+      divider.style.margin = '4px 8px';
+      menu.appendChild(divider);
+
+      menu.appendChild(createMenuItem('📥 Export All Data (via kernel)', () => {
+        context.postMessage!({
+          type: 'export_request',
+          rows: rows,
+          columns: columns,
+          query: originalQuery
+        });
+      }));
+    }
 
     exportBtn.appendChild(menu);
 

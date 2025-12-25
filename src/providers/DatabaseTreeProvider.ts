@@ -124,10 +124,108 @@ export class DatabaseTreeProvider implements vscode.TreeDataProvider<DatabaseTre
     this._onDidChangeTreeData.fire(undefined);
   }
 
-  markConnectionConnected(connectionId: string): void {
+  public markConnectionConnected(connectionId: string): void {
     this.disconnectedConnections.delete(connectionId);
     // Fire a full refresh to update tree state
     this._onDidChangeTreeData.fire(undefined);
+  }
+
+  /**
+   * Get database objects (tables, views, functions) for a connection
+   * Used by AI Generate Query feature to provide schema context
+   */
+  public async getDbObjectsForConnection(connection: any): Promise<Array<{ type: string, schema: string, name: string, columns?: string[] }>> {
+    const client = await ConnectionManager.getInstance().getPooledClient({
+      id: connection.id,
+      host: connection.host,
+      port: connection.port,
+      username: connection.username,
+      database: connection.database,
+      name: connection.name
+    });
+
+    try {
+      const objects: Array<{ type: string, schema: string, name: string, columns?: string[] }> = [];
+
+      // Fetch tables with columns
+      const tablesQuery = `
+        SELECT 
+          t.table_schema,
+          t.table_name,
+          array_agg(c.column_name ORDER BY c.ordinal_position) as columns
+        FROM information_schema.tables t
+        LEFT JOIN information_schema.columns c 
+          ON t.table_schema = c.table_schema 
+          AND t.table_name = c.table_name
+        WHERE t.table_schema NOT IN ('pg_catalog', 'information_schema')
+          AND t.table_type = 'BASE TABLE'
+        GROUP BY t.table_schema, t.table_name
+        ORDER BY t.table_schema, t.table_name
+        LIMIT 100
+      `;
+
+      const tablesResult = await client.query(tablesQuery);
+      tablesResult.rows.forEach((row: any) => {
+        objects.push({
+          type: 'table',
+          schema: row.table_schema,
+          name: row.table_name,
+          columns: row.columns
+        });
+      });
+
+      // Fetch views with columns
+      const viewsQuery = `
+        SELECT 
+          t.table_schema,
+          t.table_name,
+          array_agg(c.column_name ORDER BY c.ordinal_position) as columns
+        FROM information_schema.tables t
+        LEFT JOIN information_schema.columns c 
+          ON t.table_schema = c.table_schema 
+          AND t.table_name = c.table_name
+        WHERE t.table_schema NOT IN ('pg_catalog', 'information_schema')
+          AND t.table_type = 'VIEW'
+        GROUP BY t.table_schema, t.table_name
+        ORDER BY t.table_schema, t.table_name
+        LIMIT 50
+      `;
+
+      const viewsResult = await client.query(viewsQuery);
+      viewsResult.rows.forEach((row: any) => {
+        objects.push({
+          type: 'view',
+          schema: row.table_schema,
+          name: row.table_name,
+          columns: row.columns
+        });
+      });
+
+      // Fetch functions
+      const functionsQuery = `
+        SELECT 
+          n.nspname as schema_name,
+          p.proname as function_name
+        FROM pg_proc p
+        JOIN pg_namespace n ON p.pronamespace = n.oid
+        WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
+        ORDER BY n.nspname, p.proname
+        LIMIT 50
+      `;
+
+      const functionsResult = await client.query(functionsQuery);
+      functionsResult.rows.forEach((row: any) => {
+        objects.push({
+          type: 'function',
+          schema: row.schema_name,
+          name: row.function_name
+        });
+      });
+
+      return objects;
+    } finally {
+      client.release();
+    }
   }
 
   refresh(element?: DatabaseTreeItem): void {

@@ -51,6 +51,23 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     this._updateModelInfo();
   }
 
+  /**
+   * Send a query to the chat and pre-fill the input
+   * Called from the "Chat" CodeLens button
+   */
+  public sendToChat(data: { query: string; results?: string; message: string }): void {
+    if (!this._view) {
+      vscode.window.showWarningMessage('Chat view not available. Please open the SQL Assistant panel first.');
+      return;
+    }
+
+    // Send message to webview to pre-fill input
+    this._view.webview.postMessage({
+      type: 'prefillInput',
+      message: data.message
+    });
+  }
+
   public resolveWebviewView(
     webviewView: vscode.WebviewView,
     context: vscode.WebviewViewResolveContext,
@@ -570,8 +587,30 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     await this._handleUserMessage(prompt);
   }
 
-  public async handleGenerateQuery(description: string): Promise<void> {
-    const prompt = `Please generate a SQL query for the following request:\n\n"${description}"\n\nUse the provided schema context if available to use correct table and column names.`;
+  public async handleGenerateQuery(
+    description: string,
+    schemaContext?: Array<{ type: string, schema: string, name: string, columns?: string[] }>
+  ): Promise<void> {
+    let prompt = `Please generate a SQL query for the following request:\n\n"${description}"`;
+
+    if (schemaContext && schemaContext.length > 0) {
+      prompt += '\n\nUse the following database objects:\n\n';
+
+      schemaContext.forEach(obj => {
+        if (obj.type === 'table' || obj.type === 'view') {
+          prompt += `${obj.type.toUpperCase()}: ${obj.schema}.${obj.name}\n`;
+          if (obj.columns && obj.columns.length > 0) {
+            prompt += `  Columns: ${obj.columns.join(', ')}\n`;
+          }
+        } else if (obj.type === 'function') {
+          prompt += `FUNCTION: ${obj.schema}.${obj.name}\n`;
+        }
+        prompt += '\n';
+      });
+    } else {
+      prompt += '\n\nNote: No specific schema context provided. Please ask for table/column names if needed.';
+    }
+
     await this._handleUserMessage(prompt);
   }
 }

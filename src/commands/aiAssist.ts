@@ -608,36 +608,25 @@ const AiTaskSelector = {
    * Available AI tasks organized by category
    */
   tasks: [
-    // Custom & General
-    { label: '$(edit) Custom Instruction', description: 'Enter your own instruction', detail: 'Provide specific instructions for the AI' },
+    // Custom - Always First
+    { label: '$(edit) Custom Instruction', description: 'Enter your own instruction', detail: 'Tell the AI exactly what you want to do with this query', kind: vscode.QuickPickItemKind.Default },
 
-    // Query Understanding
-    { label: '$(comment-discussion) Explain Query', description: 'Add detailed comments explaining the query', detail: 'Adds inline comments explaining each clause and operation' },
-    { label: '$(question) What Does This Do?', description: 'Get a summary comment at the top', detail: 'Adds a block comment summarizing the query purpose' },
+    // Separator
+    { label: '', kind: vscode.QuickPickItemKind.Separator },
 
-    // Error Fixing & Debugging
-    { label: '$(bug) Fix Syntax Errors', description: 'Correct syntax errors in the query', detail: 'Fixes missing keywords, brackets, quotes, and common mistakes' },
-    { label: '$(warning) Fix Logic Issues', description: 'Identify and fix logical problems', detail: 'Fixes incorrect JOINs, wrong conditions, NULL handling issues' },
-    { label: '$(error) Debug Query', description: 'Add debugging helpers', detail: 'Adds EXPLAIN, row counts, and intermediate result checks' },
+    // Core Commands (Most Used)
+    { label: '$(comment-discussion) Explain', description: 'Add comments explaining the query', detail: 'Adds inline comments explaining each clause' },
+    { label: '$(bug) Fix Syntax Errors', description: 'Correct syntax mistakes', detail: 'Fixes missing keywords, brackets, quotes, typos' },
+    { label: '$(warning) Fix Logic Issues', description: 'Fix logical problems', detail: 'Corrects JOINs, conditions, NULL handling, duplicates' },
+    { label: '$(rocket) Optimize', description: 'Improve performance', detail: 'Rewrites for better execution plan' },
+    { label: '$(telescope) Suggest Indexes', description: 'Recommend indexes', detail: 'Suggests CREATE INDEX statements for this query' },
+    { label: '$(list-flat) Format', description: 'Beautify and standardize', detail: 'Applies consistent indentation, casing, line breaks' },
 
-    // Performance Optimization
-    { label: '$(rocket) Optimize Performance', description: 'Improve query performance', detail: 'Rewrites for better execution plan using indexes and efficient patterns' },
-    { label: '$(dashboard) Add EXPLAIN ANALYZE', description: 'Wrap with execution analysis', detail: 'Prepends EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT) for profiling' },
-    { label: '$(telescope) Suggest Indexes', description: 'Recommend indexes for this query', detail: 'Adds comments suggesting CREATE INDEX statements' },
+    // Separator
+    { label: '', kind: vscode.QuickPickItemKind.Separator },
 
-    // Formatting & Style
-    { label: '$(list-flat) Format Query', description: 'Beautify and standardize formatting', detail: 'Applies consistent indentation, casing, and line breaks' },
-    { label: '$(symbol-keyword) Uppercase Keywords', description: 'Convert keywords to uppercase', detail: 'Makes SELECT, FROM, WHERE, etc. uppercase for readability' },
-    { label: '$(primitive-square) Add Aliases', description: 'Add meaningful table aliases', detail: 'Adds descriptive aliases to tables and subqueries' },
-
-    // Query Modification
-    { label: '$(add) Add WHERE Clause', description: 'Add filtering conditions', detail: 'Prompts for conditions to filter results' },
-    { label: '$(filter) Add Pagination', description: 'Add LIMIT and OFFSET', detail: 'Adds pagination with sensible defaults' },
-    { label: '$(sort-precedence) Add ORDER BY', description: 'Add sorting to results', detail: 'Adds ORDER BY clause with appropriate columns' },
-    { label: '$(group-by-ref-type) Add GROUP BY', description: 'Aggregate results', detail: 'Adds GROUP BY and aggregation functions' },
-
-    // Advanced Operations
-    { label: '$(table) Convert to CTE', description: 'Refactor using Common Table Expressions', detail: 'Rewrites subqueries as WITH clauses for readability' },
+    // Conversions
+    { label: '$(table) Convert to CTE', description: 'Refactor using WITH clauses', detail: 'Converts subqueries to Common Table Expressions' },
     { label: '$(refresh) Convert to View', description: 'Create VIEW from query', detail: 'Wraps query in CREATE OR REPLACE VIEW' },
     { label: '$(symbol-function) Convert to Function', description: 'Create Function from query', detail: 'Wraps query in CREATE OR REPLACE FUNCTION' }
   ],
@@ -653,27 +642,16 @@ const AiTaskSelector = {
       ignoreFocusOut: true
     });
 
-    if (!selection) {
+    if (!selection || selection.kind === vscode.QuickPickItemKind.Separator) {
       return undefined;
     }
 
     if (selection.label.includes('Custom Instruction')) {
       return await vscode.window.showInputBox({
-        placeHolder: 'e.g., "Rewrite this query to filter by user status"',
+        placeHolder: 'e.g., "Add pagination", "Filter by date", "Uppercase keywords"',
         prompt: 'Enter your specific instruction for the AI',
         ignoreFocusOut: true
       });
-    }
-
-    // For specific tasks that might need extra input
-    if (selection.label.includes('Add WHERE Clause')) {
-      const condition = await vscode.window.showInputBox({
-        placeHolder: 'e.g., status = \'active\' AND created_at > NOW() - INTERVAL \'1 day\'',
-        prompt: 'Enter the filtering condition',
-        ignoreFocusOut: true
-      });
-      if (!condition) return undefined;
-      return `Add WHERE clause: ${condition}`;
     }
 
     return selection.label.replace(/\$\([a-z-]+\)\s/, ''); // Return clean label as instruction

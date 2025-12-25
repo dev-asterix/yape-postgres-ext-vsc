@@ -104,16 +104,90 @@ export function registerAllCommands(
           return;
         }
 
-        const input = await vscode.window.showInputBox({
-          prompt: 'Describe the SQL query you want to generate',
-          placeHolder: 'e.g., Show me top 10 users by order count in the last month'
+        // Step 1: Get all connections
+        const connections = vscode.workspace.getConfiguration().get<any[]>('postgresExplorer.connections') || [];
+
+        if (connections.length === 0) {
+          vscode.window.showErrorMessage('No database connections found. Please add a connection first.');
+          return;
+        }
+
+        // Step 2: Let user select connection
+        const connectionItems = connections.map(conn => ({
+          label: conn.name,
+          description: `${conn.host}:${conn.port}/${conn.database}`,
+          connection: conn
+        }));
+
+        const selectedConnection = await vscode.window.showQuickPick(connectionItems, {
+          placeHolder: 'Select a database connection',
+          title: 'Generate Query - Select Database'
         });
 
-        if (input) {
-          // Focus the chat view
-          vscode.commands.executeCommand('postgres-explorer.chatView.focus');
-          // Send to AI
-          await chatViewProviderInstance.handleGenerateQuery(input);
+        if (!selectedConnection) {
+          return;
+        }
+
+        // Step 3: Fetch database objects (tables, views, functions)
+        try {
+          const dbObjects = await databaseTreeProvider.getDbObjectsForConnection(selectedConnection.connection);
+
+          if (!dbObjects || dbObjects.length === 0) {
+            vscode.window.showWarningMessage('No tables, views, or functions found in this database.');
+            // Continue anyway, let user describe query without schema
+            const input = await vscode.window.showInputBox({
+              prompt: 'Describe the SQL query you want to generate',
+              placeHolder: 'e.g., Show me top 10 users by order count'
+            });
+
+            if (input) {
+              vscode.commands.executeCommand('postgres-explorer.chatView.focus');
+              await chatViewProviderInstance.handleGenerateQuery(input);
+            }
+            return;
+          }
+
+          // Step 4: Let user select relevant objects
+          const objectItems = dbObjects.map(obj => ({
+            label: `${obj.type === 'table' ? '📋' : obj.type === 'view' ? '👁️' : '⚙️'} ${obj.schema}.${obj.name}`,
+            description: obj.type,
+            picked: false,
+            object: obj
+          }));
+
+          const selectedObjects = await vscode.window.showQuickPick(objectItems, {
+            placeHolder: 'Select tables, views, or functions (multi-select)',
+            title: 'Generate Query - Select Database Objects',
+            canPickMany: true
+          });
+
+          if (!selectedObjects || selectedObjects.length === 0) {
+            const proceed = await vscode.window.showWarningMessage(
+              'No objects selected. Generate query without schema context?',
+              'Yes', 'No'
+            );
+
+            if (proceed !== 'Yes') {
+              return;
+            }
+          }
+
+          // Step 5: Get query description
+          const input = await vscode.window.showInputBox({
+            prompt: 'Describe the SQL query you want to generate',
+            placeHolder: 'e.g., Show me top 10 users by order count in the last month'
+          });
+
+          if (input) {
+            // Focus the chat view
+            vscode.commands.executeCommand('postgres-explorer.chatView.focus');
+
+            // Send to AI with schema context
+            const schemaContext = selectedObjects ? selectedObjects.map(item => item.object) : undefined;
+            await chatViewProviderInstance.handleGenerateQuery(input, schemaContext);
+          }
+        } catch (error: any) {
+          vscode.window.showErrorMessage(`Failed to fetch database objects: ${error.message}`);
         }
       }
     },
@@ -601,6 +675,71 @@ export function registerAllCommands(
     {
       command: 'postgres-explorer.aiAssist',
       callback: async (cell: vscode.NotebookCell) => await cmdAiAssist(cell, context, outputChannel)
+    },
+
+    {
+      command: 'postgres-explorer.chatWithQuery',
+      callback: async (cell: vscode.NotebookCell) => {
+        // Get the query from the active cell
+        let query = '';
+        let results = '';
+
+        if (cell) {
+          query = cell.document.getText();
+          // Check if there are outputs from previous execution
+          if (cell.outputs && cell.outputs.length > 0) {
+            const output = cell.outputs[0];
+            for (const item of output.items) {
+              if (item.mime === 'application/x-postgres-result' || item.mime === 'application/json') {
+                try {
+                  const data = JSON.parse(new TextDecoder().decode(item.data));
+                  if (data.rows && data.rows.length > 0) {
+                    results = `\nResults (${data.rows.length} rows): ${JSON.stringify(data.rows.slice(0, 5), null, 2)}${data.rows.length > 5 ? '\n... and more' : ''}`;
+                  }
+                } catch (e) {
+                  // Ignore parse errors
+                }
+              }
+            }
+          }
+        } else {
+          // Fallback to active notebook editor
+          const activeEditor = vscode.window.activeNotebookEditor;
+          if (activeEditor) {
+            const selections = activeEditor.selections;
+            if (selections && selections.length > 0) {
+              const cellIndex = selections[0].start;
+              const activeCell = activeEditor.notebook.cellAt(cellIndex);
+              query = activeCell.document.getText();
+            }
+          }
+        }
+
+        if (!query) {
+          vscode.window.showWarningMessage('No query found in the active cell.');
+          return;
+        }
+
+        // Focus the chat view and send the query
+        await vscode.commands.executeCommand('postgresExplorer.chatView.focus');
+
+        // Send message to chat view with query context
+        const message = `Help me with this SQL query:\n\`\`\`sql\n${query}\n\`\`\`${results}`;
+
+        // Use the chat view provider to send the message
+        if (chatViewProviderInstance) {
+          chatViewProviderInstance.sendToChat({ query, results, message });
+        }
+      }
+    },
+
+    {
+      command: 'postgres-explorer.sendToChat',
+      callback: (data: { query: string; results?: string; message: string }) => {
+        if (chatViewProviderInstance) {
+          chatViewProviderInstance.sendToChat(data);
+        }
+      }
     },
 
     // Column commands

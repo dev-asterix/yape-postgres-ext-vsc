@@ -4,6 +4,7 @@ import { PostgresMetadata } from '../common/types';
 import { ConnectionManager } from '../services/ConnectionManager';
 import { SecretStorageService } from '../services/SecretStorageService';
 import { HistoryService } from '../services/HistoryService';
+import { TelemetryService, SpanNames } from '../services/TelemetryService';
 
 export class PostgresKernel implements vscode.Disposable {
   readonly id = 'postgres-kernel';
@@ -440,11 +441,63 @@ export class PostgresKernel implements vscode.Disposable {
         }
       } else if (event.message.type === 'export_request') {
         console.log('PostgresKernel: Processing export_request message');
-        const { rows, columns } = event.message;
+        const { rows: displayRows, columns, query: originalQuery } = event.message;
+
+        // Ask if user wants to export all data or just displayed data
+        const exportChoice = await vscode.window.showQuickPick(
+          [
+            { label: '$(database) Export All Data', value: 'all', description: 'Re-execute query and export complete result' },
+            { label: '$(table) Export Displayed Data', value: 'displayed', description: `Export ${displayRows.length} rows currently shown` }
+          ],
+          { placeHolder: 'Select data to export' }
+        );
+
+        if (!exportChoice) return;
+
+        let rowsToExport = displayRows;
+
+        // If exporting all data and we have the original query, re-execute without limits
+        if (exportChoice.value === 'all' && originalQuery) {
+          const notebook = event.editor.notebook;
+          const metadata = notebook.metadata as PostgresMetadata;
+
+          if (metadata?.connectionId) {
+            try {
+              vscode.window.withProgress({
+                location: vscode.ProgressLocation.Notification,
+                title: 'Fetching all data for export...',
+                cancellable: true
+              }, async (progress, token) => {
+                const connections = vscode.workspace.getConfiguration().get<any[]>('postgresExplorer.connections') || [];
+                const connection = connections.find(c => c.id === metadata.connectionId);
+
+                if (connection) {
+                  const password = await SecretStorageService.getInstance().getPassword(connection.id);
+                  const client = await ConnectionManager.getInstance().getPooledClient({
+                    ...connection,
+                    password
+                  });
+
+                  try {
+                    progress.report({ message: 'Executing query...' });
+                    const result = await client.query(originalQuery);
+                    rowsToExport = result.rows || [];
+                    progress.report({ message: `Fetched ${rowsToExport.length} rows` });
+                  } finally {
+                    client.release();
+                  }
+                }
+              });
+            } catch (err: any) {
+              vscode.window.showErrorMessage(`Failed to fetch all data: ${err.message}. Exporting displayed data instead.`);
+              rowsToExport = displayRows;
+            }
+          }
+        }
 
         const selection = await vscode.window.showQuickPick(
           ['Save as CSV', 'Save as JSON', 'Copy to Clipboard'],
-          { placeHolder: 'Select export format' }
+          { placeHolder: `Select export format (${rowsToExport.length} rows)` }
         );
 
         if (!selection) return;
@@ -452,7 +505,7 @@ export class PostgresKernel implements vscode.Disposable {
         if (selection === 'Copy to Clipboard') {
           // Convert to CSV for clipboard
           const header = columns.map((c: string) => `"${c.replace(/"/g, '""')}"`).join(',');
-          const body = rows.map((row: any) => {
+          const body = rowsToExport.map((row: any) => {
             return columns.map((col: string) => {
               const val = row[col];
               if (val === null || val === undefined) return '';
@@ -466,10 +519,10 @@ export class PostgresKernel implements vscode.Disposable {
           const csv = `${header}\n${body}`;
 
           await vscode.env.clipboard.writeText(csv);
-          vscode.window.showInformationMessage('Data copied to clipboard (CSV format).');
+          vscode.window.showInformationMessage(`${rowsToExport.length} rows copied to clipboard (CSV format).`);
         } else if (selection === 'Save as CSV') {
           const header = columns.map((c: string) => `"${c.replace(/"/g, '""')}"`).join(',');
-          const body = rows.map((row: any) => {
+          const body = rowsToExport.map((row: any) => {
             return columns.map((col: string) => {
               const val = row[col];
               if (val === null || val === undefined) return '';
@@ -489,10 +542,10 @@ export class PostgresKernel implements vscode.Disposable {
 
           if (uri) {
             await vscode.workspace.fs.writeFile(uri, Buffer.from(csv, 'utf8'));
-            vscode.window.showInformationMessage('CSV exported successfully.');
+            vscode.window.showInformationMessage(`${rowsToExport.length} rows exported to CSV successfully.`);
           }
         } else if (selection === 'Save as JSON') {
-          const json = JSON.stringify(rows, null, 2);
+          const json = JSON.stringify(rowsToExport, null, 2);
           const uri = await vscode.window.showSaveDialog({
             filters: { 'JSON': ['json'] },
             saveLabel: 'Export JSON'
@@ -500,7 +553,7 @@ export class PostgresKernel implements vscode.Disposable {
 
           if (uri) {
             await vscode.workspace.fs.writeFile(uri, Buffer.from(json, 'utf8'));
-            vscode.window.showInformationMessage('JSON exported successfully.');
+            vscode.window.showInformationMessage(`${rowsToExport.length} rows exported to JSON successfully.`);
           }
         }
       }
@@ -727,10 +780,23 @@ export class PostgresKernel implements vscode.Disposable {
 
         let result;
         try {
+          // Start telemetry span for query execution
+          const telemetry = TelemetryService.getInstance();
+          const spanId = telemetry.startSpan(SpanNames.QUERY_EXECUTE, {
+            statementIndex: stmtIndex + 1,
+            statementCount: statements.length
+          });
+
           result = await client.query(query);
           const stmtEndTime = Date.now();
           const executionTime = (stmtEndTime - stmtStartTime) / 1000;
           totalExecutionTime += executionTime;
+
+          // End telemetry span with result info
+          telemetry.endSpan(spanId, {
+            rowCount: result.rowCount || 0,
+            durationMs: stmtEndTime - stmtStartTime
+          });
 
           const MAX_ROWS = 10000;
           let rows = result.rows || [];
@@ -852,7 +918,7 @@ export class PostgresKernel implements vscode.Disposable {
                 acc[field.name] = formatType(field.dataTypeID);
                 return acc;
               }, {})
-            }, 'text/x-json'), // Use custom mime type for renderer
+            }, 'application/x-postgres-result'), // Use custom mime type for renderer
             vscode.NotebookCellOutputItem.json(rows, 'application/json') // Standard JSON fallback
           ]));
 

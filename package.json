@@ -939,6 +939,21 @@
           "type": "string",
           "default": "",
           "description": "Custom API endpoint (optional)"
+        },
+        "postgresExplorer.streaming.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable cursor-based streaming for large result sets"
+        },
+        "postgresExplorer.streaming.batchSize": {
+          "type": "number",
+          "default": 200,
+          "description": "Number of rows per batch when streaming results"
+        },
+        "postgresExplorer.telemetry.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable performance telemetry (opt-in, privacy-first)"
         }
       }
     },
@@ -1653,9 +1668,11 @@
     "coverage": "nyc npm run test"
   },
   "dependencies": {
+    "@types/pg-cursor": "^2.7.2",
     "chart.js": "^4.5.1",
     "esbuild": ">=0.25.0",
     "pg": "^8.11.3",
+    "pg-cursor": "^2.15.3",
     "ssh2": "^1.15.0"
   },
   "devDependencies": {
@@ -1664,8 +1681,8 @@
     "@types/module-alias": "^2.0.4",
     "@types/node": "^16.18.126",
     "@types/pg": "^8.11.11",
-    "@types/ssh2": "^1.15.0",
     "@types/sinon": "^21.0.0",
+    "@types/ssh2": "^1.15.0",
     "@types/vscode": "^1.80.0",
     "@types/vscode-notebook-renderer": "^1.72.4",
     "chai": "^6.2.1",

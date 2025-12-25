@@ -309,7 +309,7 @@ export const activate: ActivationFunction = context => {
         executionTime
       );
 
-      const exportBtn = createExportButton(columns, currentRows, tableInfo);
+      const exportBtn = createExportButton(columns, currentRows, tableInfo, context, query);
 
       actionsBar.appendChild(selectAllBtn);
       actionsBar.appendChild(copyBtn);
