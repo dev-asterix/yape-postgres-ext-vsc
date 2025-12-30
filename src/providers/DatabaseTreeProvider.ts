@@ -3,10 +3,8 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import { ConnectionManager } from '../services/ConnectionManager';
 
-// Key format for favorites: "type:connectionId:database:schema:name"
 function buildItemKey(item: DatabaseTreeItem): string {
-  const parts = [item.type, item.connectionId || '', item.databaseName || '', item.schema || '', item.label];
-  return parts.join(':');
+  return [item.type, item.connectionId || '', item.databaseName || '', item.schema || '', item.label].join(':');
 }
 
 export class DatabaseTreeProvider implements vscode.TreeDataProvider<DatabaseTreeItem> {
@@ -263,31 +261,19 @@ export class DatabaseTreeProvider implements vscode.TreeDataProvider<DatabaseTre
       ));
     }
 
-    // Auto-connect on expansion: if connection is disconnected, mark it as connected
     if (element.type === 'connection' && element.connectionId && this.disconnectedConnections.has(element.connectionId)) {
-      console.log(`Connection ${element.connectionId} is being expanded, auto - connecting...`);
       this.markConnectionConnected(element.connectionId);
     }
 
     const connection = connections.find(c => c.id === element.connectionId);
     if (!connection) {
-      console.error(`Connection not found for ID: ${element.connectionId} `);
-      vscode.window.showErrorMessage('Connection configuration not found');
+      vscode.window.showErrorMessage('Connection not found');
       return [];
     }
 
     let client: PoolClient | undefined;
     try {
       const dbName = element.type === 'connection' ? 'postgres' : element.databaseName;
-
-      console.log(`Attempting to connect to ${connection.name} (${dbName})`);
-
-      // Use ConnectionManager to get a shared pooled client
-      // We must cast to any to handle the _originalEnd logic if we were using getConnection, 
-      // but here we switch to getPooledClient and will call release() explicitly or let the helper handle it.
-      // However, getChildren seems to assume it can hold onto 'client'?
-      // Wait, getChildren logic is: get client, run query, return items. It doesn't seem to pass client to items.
-      // So we should acquire, query, release.
 
       client = await ConnectionManager.getInstance().getPooledClient({
         id: connection.id,
@@ -298,27 +284,16 @@ export class DatabaseTreeProvider implements vscode.TreeDataProvider<DatabaseTre
         name: connection.name
       });
 
-      console.log(`Successfully connected to ${connection.name} `);
-
       switch (element.type) {
         case 'connection':
-          // At connection level, show Favorites (if any), Databases group and Users & Roles
           const items: DatabaseTreeItem[] = [];
 
-          // Check if there are favorites for this connection
-          const connectionFavorites = this.getFavoriteKeys().filter(key => {
-            const parts = key.split(':');
-            return parts[1] === element.connectionId;
-          });
+          const connectionFavorites = this.getFavoriteKeys().filter(key => key.split(':')[1] === element.connectionId);
           if (connectionFavorites.length > 0) {
             items.push(new DatabaseTreeItem('Favorites', vscode.TreeItemCollapsibleState.Collapsed, 'favorites-group', element.connectionId));
           }
 
-          // Check if there are recent items for this connection
-          const connectionRecent = this.getRecentKeys().filter(key => {
-            const parts = key.split(':');
-            return parts[1] === element.connectionId;
-          });
+          const connectionRecent = this.getRecentKeys().filter(key => key.split(':')[1] === element.connectionId);
           if (connectionRecent.length > 0) {
             items.push(new DatabaseTreeItem('Recent', vscode.TreeItemCollapsibleState.Collapsed, 'recent-group', element.connectionId));
           }
@@ -328,10 +303,7 @@ export class DatabaseTreeProvider implements vscode.TreeDataProvider<DatabaseTre
           return items;
 
         case 'databases-group':
-          // Show all databases under the Databases group (including system databases)
-          const dbResult = await client.query(
-            "SELECT datname FROM pg_database ORDER BY datname"
-          );
+          const dbResult = await client.query("SELECT datname FROM pg_database ORDER BY datname");
           return dbResult.rows.map(row => new DatabaseTreeItem(
             row.datname,
             vscode.TreeItemCollapsibleState.Collapsed,
@@ -341,12 +313,8 @@ export class DatabaseTreeProvider implements vscode.TreeDataProvider<DatabaseTre
           ));
 
         case 'favorites-group':
-          // Show all favorited items for this connection
           const favoriteItems: DatabaseTreeItem[] = [];
-          const favoriteKeys = this.getFavoriteKeys().filter(key => {
-            const parts = key.split(':');
-            return parts[1] === element.connectionId;
-          });
+          const favoriteKeys = this.getFavoriteKeys().filter(key => key.split(':')[1] === element.connectionId);
 
           for (const key of favoriteKeys) {
             const parts = key.split(':');

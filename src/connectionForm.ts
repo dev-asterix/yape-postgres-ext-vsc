@@ -1,5 +1,6 @@
 import { Client } from 'pg';
 import * as vscode from 'vscode';
+import * as fs from 'fs';
 import { SSHService } from './services/SSHService';
 
 export interface ConnectionInfo {
@@ -43,64 +44,120 @@ export class ConnectionFormPanel {
 
     this._panel.webview.onDidReceiveMessage(
       async (message) => {
-        switch (message.command) {
-          case 'testConnection':
-            try {
-              const config: any = {
-                user: message.connection.username || undefined,
-                password: message.connection.password || undefined,
-                database: message.connection.database || 'postgres'
-              };
+        // Helper to build client config with SSL
+        const buildClientConfig = (connection: any, dbName: string, forceDisableSSL: boolean) => {
+          const config: any = {
+            user: connection.username || undefined,
+            password: connection.password || undefined,
+            database: dbName
+          };
 
-              if (message.connection.ssh && message.connection.ssh.enabled) {
+          if (!forceDisableSSL) {
+            const sslMode = connection.sslmode || 'prefer'; // Default to prefer
+            if (sslMode !== 'disable') {
+              const sslConfig: any = {
+                rejectUnauthorized: sslMode === 'verify-ca' || sslMode === 'verify-full'
+              };
+              try {
+                if (connection.sslRootCertPath) sslConfig.ca = fs.readFileSync(connection.sslRootCertPath).toString();
+                if (connection.sslCertPath) sslConfig.cert = fs.readFileSync(connection.sslCertPath).toString();
+                if (connection.sslKeyPath) sslConfig.key = fs.readFileSync(connection.sslKeyPath).toString();
+              } catch (e: any) { console.warn('Error reading SSL certs:', e); }
+              config.ssl = sslConfig;
+            }
+          }
+          return config;
+        };
+
+        const runTest = async (connection: any, isSave: boolean) => {
+          let config = buildClientConfig(connection, isSave ? 'postgres' : (connection.database || 'postgres'), false);
+
+          if (connection.ssh && connection.ssh.enabled) {
+            const stream = await SSHService.getInstance().createStream(
+              connection.ssh,
+              connection.host,
+              connection.port
+            );
+            config.stream = stream;
+          } else {
+            config.host = connection.host;
+            config.port = connection.port;
+          }
+
+          let client = new Client(config);
+          try {
+            await client.connect();
+            if (isSave) {
+              await client.query('SELECT 1');
+            } else {
+              const result = await client.query('SELECT version()');
+              return result.rows[0].version;
+            }
+            await client.end();
+            return true;
+          } catch (err: any) {
+            // fallbacks
+            const sslMode = connection.sslmode || 'prefer';
+            const isSSLFailure = (err.message || '').toString().toLowerCase().includes('server does not support ssl') || err.code === 'ECONNRESET' || err.code === 'EPROTO';
+
+            if ((sslMode === 'prefer' || sslMode === 'allow') && isSSLFailure) {
+              // Retry without SSL
+              config = buildClientConfig(connection, isSave ? 'postgres' : (connection.database || 'postgres'), true);
+              if (connection.ssh && connection.ssh.enabled) {
                 const stream = await SSHService.getInstance().createStream(
-                  message.connection.ssh,
-                  message.connection.host,
-                  message.connection.port
+                  connection.ssh,
+                  connection.host,
+                  connection.port
                 );
                 config.stream = stream;
               } else {
-                config.host = message.connection.host;
-                config.port = message.connection.port;
+                config.host = connection.host;
+                config.port = connection.port;
               }
 
-              // First try with specified database
-              const client = new Client(config);
-              try {
-                await client.connect();
+              client = new Client(config);
+              await client.connect();
+              if (isSave) {
+                await client.query('SELECT 1');
+              } else {
                 const result = await client.query('SELECT version()');
-                await client.end();
-                this._panel.webview.postMessage({
-                  type: 'testSuccess',
-                  version: result.rows[0].version
-                });
-              } catch (err: any) {
-                if (config.stream) {
-                  // If using stream, we can't easily fallback without creating a new stream
-                  // simpler to just throw for now or re-create stream
-                  throw err;
-                }
-
-                // If database doesn't exist, try postgres database
-                if (err.code === '3D000' && message.connection.database !== 'postgres') {
-                  const fallbackClient = new Client({
-                    host: message.connection.host,
-                    port: message.connection.port,
-                    user: message.connection.username || undefined,
-                    password: message.connection.password || undefined,
-                    database: 'postgres'
-                  });
-                  await fallbackClient.connect();
-                  const result = await fallbackClient.query('SELECT version()');
-                  await fallbackClient.end();
-                  this._panel.webview.postMessage({
-                    type: 'testSuccess',
-                    version: result.rows[0].version + ' (connected to postgres database)'
-                  });
-                } else {
-                  throw err;
-                }
+                return result.rows[0].version;
               }
+              await client.end();
+              return true;
+            }
+
+            // Database verification fallback for testConnection only
+            // If database doesn't exist, try postgres database
+            if (!isSave && err.code === '3D000' && connection.database !== 'postgres') {
+              // Retry with postgres db
+              config = buildClientConfig(connection, 'postgres', false);
+              if (connection.ssh && connection.ssh.enabled) {
+                const stream = await SSHService.getInstance().createStream(connection.ssh, connection.host, connection.port);
+                config.stream = stream;
+              } else {
+                config.host = connection.host;
+                config.port = connection.port;
+              }
+
+              client = new Client(config);
+              await client.connect();
+              const result = await client.query('SELECT version()');
+              await client.end();
+              return result.rows[0].version + ' (connected to postgres database)';
+            }
+            throw err;
+          }
+        };
+
+        switch (message.command) {
+          case 'testConnection':
+            try {
+              const version = await runTest(message.connection, false);
+              this._panel.webview.postMessage({
+                type: 'testSuccess',
+                version: version
+              });
             } catch (err: any) {
               this._panel.webview.postMessage({
                 type: 'testError',
@@ -111,31 +168,7 @@ export class ConnectionFormPanel {
 
           case 'saveConnection':
             try {
-              const config: any = {
-                user: message.connection.username || undefined,
-                password: message.connection.password || undefined,
-                database: 'postgres'
-              };
-
-              if (message.connection.ssh && message.connection.ssh.enabled) {
-                const stream = await SSHService.getInstance().createStream(
-                  message.connection.ssh,
-                  message.connection.host,
-                  message.connection.port
-                );
-                config.stream = stream;
-              } else {
-                config.host = message.connection.host;
-                config.port = message.connection.port;
-              }
-
-              const client = new Client(config);
-
-              await client.connect();
-
-              // Verify we can query
-              await client.query('SELECT 1');
-              await client.end();
+              await runTest(message.connection, true);
 
               const connections = this.getStoredConnections();
               const newConnection: ConnectionInfo = {
