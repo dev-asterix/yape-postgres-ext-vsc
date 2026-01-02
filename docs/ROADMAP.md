@@ -43,12 +43,12 @@
 
 ---
 
-## 🏗️ Phase 3: Architecture Refactoring ✅ MOSTLY COMPLETE
+## 🏗️ Phase 3: Architecture Refactoring ✅ COMPLETE
 
 ### Code Organization
 - [x] Split `extension.ts` → `commands/`, `providers/`, `services/`
 - [x] Split `renderer_v2.ts` into modular components (`renderer/components/`, `renderer/features/`)
-- [ ] Split `tables.ts` (51KB) → `operations.ts`, `scripts.ts`, `maintenance.ts`
+- [x] Split `tables.ts` (51KB) → `operations.ts`, `scripts.ts`, `maintenance.ts`
 
 ### Service Layer ✅ COMPLETE
 - [x] Hybrid connection pooling (`pg.Pool` for ephemeral, `pg.Client` for sessions)
@@ -76,29 +76,72 @@
 
 ---
 
-## 🚀 Phase 5: Future Features
+## 🛡️ Phase 5: Safety & Confidence
 
-### Near-term (1-3 months)
-- [ ] Query snippets with variables
-- [ ] Table structure diff across connections
-- [ ] Smart query bookmarks
+### Safety & Trust
+- [ ] **Prod-aware write query confirmation**
+  - Implementation: Intercept execution in `QueryService`, check connection tags/regex, show modal warning.
+- [ ] **Read-only / Safe mode per connection**
+  - Implementation: `set_config('default_transaction_read_only', 'on')` on connection start or connection string param.
+- [ ] **Missing `WHERE` / large-table warnings**
+  - Implementation: Simple AST parsing or regex check before execution to detect potentially destructive queries on large tables.
 
-### Mid-term (3-6 months)
-- [ ] Connection export/import (encrypted)
-- [ ] Shared query library (`.pgstudio/` folder)
-- [ ] ERD diagram generation
-
-### Long-term (6+ months)
-- [ ] Audit logging
-- [ ] Schema migration tracking
-- [ ] Role-based access controls
+### Context & Navigation
+- [x] **Actionable breadcrumbs (click to switch)**
+- [ ] **Status-bar risk indicator**
+  - Implementation: Color-coded status bar (Red/Orange/Green) based on connection tag (Prod/Staging/Local).
+- [ ] **Reveal current object in explorer**
+  - Implementation: Use VS Code Tree View API `reveal` to sync explorer with active tab.
 
 ---
 
-## 🔧 Technical Debt
+## 🧠 Phase 6: Data Intelligence & Productivity
 
-| Item | Priority |
-|------|----------|
-| Migrate inline styles to `htmlStyles.ts` | Medium |
-| Standardize error handling | Medium |
-| Add JSDoc to exported functions | Low |
+### Query Productivity
+- [ ] **Query history with rerun & diff**
+- [ ] **Auto `LIMIT` / sampling for SELECT**
+  - Implementation: Automatically append `LIMIT 100` if not present when in browsing mode.
+- [ ] **One-click `EXPLAIN` / `EXPLAIN ANALYZE`**
+  - Implementation: CodeLens or button to wrap current query in `EXPLAIN ANALYZE` and visualize output.
+
+### Table Intelligence
+- [ ] **Table profile**
+  - Implementation: Fetch row count, approximate size, null %, distinction stats.
+- [ ] **Quick stats & recent activity**
+  - Implementation: Show recent tuples inserted/updated/deleted from `pg_stat_user_tables`.
+- [ ] **Open definition / indexes / constraints**
+  - Implementation: Quick view for DDL, indexes list, and foreign key constraints.
+
+---
+
+## ⚡ Phase 7: Advanced Power User & AI
+
+### AI Upgrades
+- [x] **Inject schema + breadcrumb into AI context**
+- [ ] **“Explain this result” / “Why slow?”**
+  - Implementation: Feed query execution plan or result summary to AI for analysis.
+- [ ] **Safer AI suggestions on prod connections**
+  - Implementation: Prompt engineering to warn AI about production contexts.
+
+### Power-User Extras
+- [ ] **Connection profiles**
+  - Implementation: Profiles for "Read-Only Analyst", "DB Admin", etc., with preset safety settings.
+- [ ] **Saved queries**
+  - Implementation: VS Code level storage for snippet library, distinct from DB views.
+- [ ] **Lightweight schema diff**
+  - Implementation: Compare structure of two schemas/DBs and generate diff script.
+
+---
+
+## ❌ Intentionally Not Now
+
+- [ ] Visual query builder
+- [ ] ER diagrams
+- [ ] Full plan visualizers
+- [ ] Cloud sync / accounts
+
+---
+
+### Guiding rule (tattoo this mentally):
+
+> **Reduce fear. Increase speed. Everything else waits.**

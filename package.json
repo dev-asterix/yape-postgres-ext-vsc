@@ -770,6 +770,38 @@
         "command": "postgres-explorer.addIndex",
         "title": "Add Index",
         "icon": "$(add)"
+      },
+      {
+        "command": "postgres-explorer.clearHistory",
+        "title": "Clear History",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "postgres-explorer.copyQuery",
+        "title": "Copy Query",
+        "icon": "$(copy)"
+      },
+      {
+        "command": "postgres-explorer.openQuery",
+        "title": "Open Query",
+        "icon": "$(go-to-file)"
+      },
+      {
+        "command": "postgres-explorer.deleteHistoryItem",
+        "title": "Delete",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "postgres-explorer.switchConnection",
+        "title": "Switch Connection",
+        "icon": "$(server)",
+        "category": "PgStudio"
+      },
+      {
+        "command": "postgres-explorer.switchDatabase",
+        "title": "Switch Database",
+        "icon": "$(database)",
+        "category": "PgStudio"
       }
     ],
     "submenus": [
@@ -830,6 +862,12 @@
           "type": "webview",
           "contextualTitle": "SQL Assistant",
           "icon": "resources/ai-icon.png"
+        },
+        {
+          "id": "postgresExplorer.history",
+          "name": "Query History",
+          "contextualTitle": "Query History",
+          "icon": "$(history)"
         }
       ]
     },
@@ -863,7 +901,9 @@
         "displayName": "Postgres Query Renderer",
         "entrypoint": "./dist/renderer_v2.js",
         "mimeTypes": [
-          "application/x-postgres-result"
+          "application/x-postgres-result",
+          "application/vnd.postgres-notebook.result",
+          "application/vnd.postgres-notebook.error"
         ],
         "requiresMessaging": "always"
       }
@@ -909,6 +949,10 @@
               "database": {
                 "type": "string",
                 "description": "Default database to connect to"
+              },
+              "group": {
+                "type": "string",
+                "description": "Group name for organizing connections"
               }
             }
           }
@@ -954,6 +998,11 @@
           "type": "boolean",
           "default": false,
           "description": "Enable performance telemetry (opt-in, privacy-first)"
+        },
+        "postgresExplorer.queryTimeout": {
+          "type": "number",
+          "default": 0,
+          "description": "Global query timeout in milliseconds (0 for no timeout). Can be overridden per connection."
         }
       }
     },
@@ -1000,9 +1049,29 @@
           "command": "postgres-explorer.aiSettings",
           "when": "view == postgresExplorer",
           "group": "navigation"
+        },
+        {
+          "command": "postgres-explorer.clearHistory",
+          "when": "view == postgresExplorer.history",
+          "group": "navigation"
         }
       ],
       "view/item/context": [
+        {
+          "command": "postgres-explorer.copyQuery",
+          "when": "view == postgresExplorer.history",
+          "group": "1_modification"
+        },
+        {
+          "command": "postgres-explorer.openQuery",
+          "when": "view == postgresExplorer.history",
+          "group": "1_modification"
+        },
+        {
+          "command": "postgres-explorer.deleteHistoryItem",
+          "when": "view == postgresExplorer.history",
+          "group": "2_destructive"
+        },
         {
           "command": "postgres-explorer.showTableProperties",
           "when": "view == postgresExplorer && viewItem == table",
@@ -1650,7 +1719,29 @@
           "group": "inline"
         }
       ]
-    }
+    },
+    "keybindings": [
+      {
+        "command": "postgres-explorer.newNotebook",
+        "key": "ctrl+alt+n",
+        "mac": "cmd+alt+n"
+      },
+      {
+        "command": "postgres-explorer.addConnection",
+        "key": "ctrl+alt+a",
+        "mac": "cmd+alt+a"
+      },
+      {
+        "command": "postgres-explorer.showDashboard",
+        "key": "ctrl+alt+d",
+        "mac": "cmd+alt+d"
+      },
+      {
+        "command": "postgres-explorer.queryTool",
+        "key": "ctrl+alt+e",
+        "mac": "cmd+alt+e"
+      }
+    ]
   },
   "activationEvents": [
     "onStartupFinished"

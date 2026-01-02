@@ -1,0 +1,209 @@
+:root {
+  --bg-color: var(--vscode-editor-background);
+  --fg-color: var(--vscode-editor-foreground);
+  --card-bg: var(--vscode-editor-background);
+  --border-color: var(--vscode-widget-border);
+  --muted-color: var(--vscode-descriptionForeground);
+  --accent-color: var(--vscode-textLink-foreground);
+  --success-color: #4ade80;
+  --warning-color: #facc15;
+  --danger-color: #f87171;
+  --font-family: var(--vscode-font-family);
+  --card-radius: 6px;
+  --card-border: 1px solid var(--border-color);
+}
+
+body {
+  background-color: var(--bg-color);
+  color: var(--fg-color);
+  font-family: var(--font-family);
+  margin: 0;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+}
+
+/* --- Typography --- */
+h1,
+h2,
+h3 {
+  margin: 0;
+  font-weight: 500;
+}
+
+.label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted-color);
+}
+
+.value {
+  font-size: 1.5rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.mono {
+  font-family: 'SF Mono', 'Segoe UI Mono', 'Roboto Mono', monospace;
+}
+
+/* --- Grid System --- */
+.grid-strip {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 16px;
+}
+
+.card {
+  background: var(--card-bg);
+  border: var(--card-border);
+  border-radius: var(--card-radius);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 80px;
+  transition: transform 0.1s ease-in-out;
+}
+
+.card.interactive:hover {
+  cursor: pointer;
+  border-color: var(--accent-color);
+}
+
+/* --- Status Indicators --- */
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  margin-right: 6px;
+}
+
+.status-ok {
+  background-color: var(--success-color);
+}
+
+.status-warn {
+  background-color: var(--warning-color);
+}
+
+.status-crit {
+  background-color: var(--danger-color);
+}
+
+/* --- Specific Sections --- */
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.header-info {
+  display: flex;
+  gap: 24px;
+  color: var(--muted-color);
+  font-size: 0.9rem;
+}
+
+/* --- Charts Area --- */
+.charts-row {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 24px;
+}
+
+.chart-box {
+  border: var(--card-border);
+  border-radius: var(--card-radius);
+  padding: 16px;
+  height: 200px;
+}
+
+/* --- Tables --- */
+.table-container {
+  border: var(--card-border);
+  border-radius: var(--card-radius);
+  overflow: hidden;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+th {
+  text-align: left;
+  padding: 12px 16px;
+  background: rgba(128, 128, 128, 0.05);
+  font-weight: 500;
+  color: var(--muted-color);
+  font-size: 0.8rem;
+}
+
+td {
+  padding: 12px 16px;
+  border-top: 1px solid var(--border-color);
+}
+
+tr.row-crit {
+  background: rgba(248, 113, 113, 0.15);
+  /* Darker red */
+}
+
+tr.row-warn {
+  background: rgba(250, 204, 21, 0.1);
+}
+
+.actions-cell {
+  text-align: right;
+}
+
+.btn-action {
+  background: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--muted-color);
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.75rem;
+}
+
+.btn-action:hover {
+  color: var(--fg-color);
+  border-color: var(--accent-color);
+}
+
+.btn-danger {
+  color: var(--danger-color);
+  border-color: rgba(248, 113, 113, 0.3);
+}
+
+.btn-danger:hover {
+  background: var(--danger-color);
+  color: white;
+}
+
+/* Duplicated rule in original, keeping single logic */
+.btn-warn {
+  color: var(--warning-color);
+  border-color: rgba(250, 204, 21, 0.3);
+}
+
+.btn-warn:hover {
+  background: var(--warning-color);
+  color: black;
+}
+
+/* --- Detail View --- */
+#detail-view {
+  display: none;
+  margin-top: 24px;
+}
+
+#main-view {
+  display: block;
+}

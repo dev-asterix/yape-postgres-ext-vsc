@@ -1,8 +1,10 @@
 import { Client, Pool, PoolClient, ClientConfig, PoolConfig } from 'pg';
+import * as vscode from 'vscode';
 import * as fs from 'fs';
 import { ConnectionConfig } from '../common/types';
 import { SecretStorageService } from './SecretStorageService';
 import { SSHService } from './SSHService';
+import { ErrorService } from './ErrorService';
 
 export class ConnectionManager {
   private static instance: ConnectionManager;
@@ -79,7 +81,10 @@ export class ConnectionManager {
       idleTimeoutMillis: 30000
     };
     const pool = new Pool(poolConfig);
-    pool.on('error', (err) => console.error(`Pool error for ${key}`, err));
+    pool.on('error', (err) => {
+      console.error(`Pool error for ${key}`, err);
+      // Don't show modal for background pool errors, but could log to output channel in future
+    });
     return pool;
   }
 
@@ -110,6 +115,7 @@ export class ConnectionManager {
     client.on('end', () => this.sessions.delete(key));
     client.on('error', (err) => {
       console.error(`Session client error for ${key}`, err);
+      ErrorService.getInstance().showError(`Session connection error (${config.name}): ${err.message}`);
       this.sessions.delete(key);
     });
     this.sessions.set(key, client);
@@ -235,7 +241,7 @@ export class ConnectionManager {
       password: password || undefined,
       database: config.database || 'postgres',
       connectionTimeoutMillis: (config.connectTimeout || 5) * 1000,
-      statement_timeout: config.statementTimeout || undefined,
+      statement_timeout: config.statementTimeout || vscode.workspace.getConfiguration('postgresExplorer').get<number>('queryTimeout') || undefined,
       application_name: config.applicationName || 'PgStudio',
       ssl: sslConfig || undefined,
       ...(config.options ? { options: config.options } : {})
@@ -250,6 +256,8 @@ export class ConnectionManager {
         );
         clientConfig.stream = stream as any;
       } catch (err: any) {
+        // SSH errors are critical for connection creation
+        ErrorService.getInstance().showError(`SSH Connection failed: ${err.message}`);
         throw new Error(`SSH Connection failed: ${err.message}`);
       }
     } else {

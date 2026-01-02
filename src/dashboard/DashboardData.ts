@@ -6,7 +6,9 @@ export interface DashboardStats {
   size: string;
   activeConnections: number;
   idleConnections: number;
+  waitingConnections: number;
   totalConnections: number;
+  maxConnections: number;
   extensionCount: number;
   topTables: { name: string; size: string; rawSize: number }[];
   connectionStates: { state: string; count: number }[];
@@ -41,14 +43,18 @@ export interface DashboardStats {
     xact_rollback: number;
     blks_read: number;
     blks_hit: number;
+    deadlocks: number;
+    conflicts: number;
   };
+  waitEvents: { type: string; count: number }[];
+  longRunningQueries: number;
 }
 
 import { Client, PoolClient } from 'pg';
 
 export async function fetchStats(client: Client | PoolClient, dbName: string): Promise<DashboardStats> {
   // Fetch data with error handling for each query to prevent one failure from breaking the entire dashboard
-  const [dbInfoRes, connRes, tableRes, extRes, countsRes, activeQueriesRes, locksRes, metricsRes] = await Promise.allSettled([
+  const [dbInfoRes, connRes, tableRes, extRes, countsRes, activeQueriesRes, locksRes, metricsRes, settingsRes, waitsRes, longQueriesRes] = await Promise.allSettled([
     // DB Info
     client.query(`
             SELECT pg_catalog.pg_get_userbyid(d.datdba) as owner,
@@ -57,12 +63,12 @@ export async function fetchStats(client: Client | PoolClient, dbName: string): P
             WHERE d.datname = $1
         `, [dbName]),
 
-    // Connection States
+    // Connection States (Active, Idle, Waiting)
     client.query(`
-            SELECT state, count(*) as count
+            SELECT state, wait_event_type IS NOT NULL as waiting, count(*) as count
             FROM pg_stat_activity
             WHERE datname = $1
-            GROUP BY state
+            GROUP BY state, waiting
         `, [dbName]),
 
     // Top Tables
@@ -133,12 +139,35 @@ export async function fetchStats(client: Client | PoolClient, dbName: string): P
             AND blocking_activity.datname = $1
         `, [dbName]),
 
-    // Database Metrics (Throughput & I/O)
+    // Database Metrics (Throughput & I/O & Conflicts/Deadlocks)
     client.query(`
-            SELECT xact_commit, xact_rollback, blks_read, blks_hit 
+            SELECT xact_commit, xact_rollback, blks_read, blks_hit, deadlocks, conflicts
             FROM pg_stat_database 
             WHERE datname = $1
-        `, [dbName])
+        `, [dbName]),
+
+    // Settings (Max Connections)
+    client.query(`SHOW max_connections`),
+
+    // Wait Events Information
+    client.query(`
+            SELECT wait_event_type, count(*) as count
+            FROM pg_stat_activity
+            WHERE wait_event_type IS NOT NULL
+            AND datname = $1
+            GROUP BY wait_event_type
+            ORDER BY count DESC
+            LIMIT 3
+    `, [dbName]),
+
+    // Long Running Queries Count (> 5 seconds)
+    client.query(`
+            SELECT count(*) as count
+            FROM pg_stat_activity
+            WHERE state = 'active'
+            AND (now() - query_start) > interval '5 seconds'
+            AND datname = $1
+    `, [dbName])
   ]);
 
   // Helper to safely extract result or return empty default
@@ -158,10 +187,14 @@ export async function fetchStats(client: Client | PoolClient, dbName: string): P
   const extCount = getResult(extRes).rows[0]?.count || 0;
   const activeQueriesRows = getResult(activeQueriesRes).rows;
   const locksRows = getResult(locksRes).rows;
-  const metricsRow = getResult(metricsRes).rows[0] || { xact_commit: 0, xact_rollback: 0, blks_read: 0, blks_hit: 0 };
+  const metricsRow = getResult(metricsRes).rows[0] || { xact_commit: 0, xact_rollback: 0, blks_read: 0, blks_hit: 0, deadlocks: 0, conflicts: 0 };
+  const maxConnRow = getResult(settingsRes).rows[0] || { max_connections: '100' };
+  const waitEventsRows = getResult(waitsRes).rows;
+  const longQueriesRow = getResult(longQueriesRes).rows[0] || { count: 0 };
 
   let active = 0;
   let idle = 0;
+  let waiting = 0;
   let total = 0;
   const connectionStates: { state: string; count: number }[] = [];
 
@@ -170,6 +203,7 @@ export async function fetchStats(client: Client | PoolClient, dbName: string): P
     total += count;
     if (row.state === 'active') active += count;
     if (row.state === 'idle') idle += count;
+    if (row.waiting) waiting += count;
     connectionStates.push({ state: row.state || 'unknown', count });
   });
 
@@ -179,7 +213,9 @@ export async function fetchStats(client: Client | PoolClient, dbName: string): P
     size: dbInfo?.size || 'Unknown',
     activeConnections: active,
     idleConnections: idle,
+    waitingConnections: waiting,
     totalConnections: total,
+    maxConnections: parseInt(maxConnRow.max_connections),
     extensionCount: parseInt(extCount),
     topTables: tableRows.map((r: any) => ({
       name: r.name,
@@ -218,8 +254,15 @@ export async function fetchStats(client: Client | PoolClient, dbName: string): P
       xact_commit: parseInt(metricsRow.xact_commit || '0'),
       xact_rollback: parseInt(metricsRow.xact_rollback || '0'),
       blks_read: parseInt(metricsRow.blks_read || '0'),
-      blks_hit: parseInt(metricsRow.blks_hit || '0')
-    }
+      blks_hit: parseInt(metricsRow.blks_hit || '0'),
+      deadlocks: parseInt(metricsRow.deadlocks || '0'),
+      conflicts: parseInt(metricsRow.conflicts || '0')
+    },
+    waitEvents: waitEventsRows.map((r: any) => ({
+      type: r.wait_event_type,
+      count: parseInt(r.count)
+    })),
+    longRunningQueries: parseInt(longQueriesRow.count)
   };
 }
 

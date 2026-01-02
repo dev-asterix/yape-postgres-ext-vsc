@@ -21,6 +21,7 @@ import {
   SessionService,
   getWebviewHtml
 } from './chat';
+import { ErrorService } from '../services/ErrorService';
 
 export class ChatViewProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = 'postgresExplorer.chatView';
@@ -150,15 +151,15 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
     } catch (error) {
       console.error('[ChatViewProvider] Failed to create temp files:', error);
-      vscode.window.showErrorMessage('Failed to attach files to chat');
+      ErrorService.getInstance().showError('Failed to attach files to chat');
     }
   }
 
-  public resolveWebviewView(
+  public async resolveWebviewView(
     webviewView: vscode.WebviewView,
     context: vscode.WebviewViewResolveContext,
     _token: vscode.CancellationToken
-  ) {
+  ): Promise<void> {
     this._view = webviewView;
 
     webviewView.webview.options = {
@@ -171,7 +172,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     const highlightJsUri = webviewView.webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'resources', 'highlight.min.js'));
     const highlightCssUri = webviewView.webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'resources', 'highlight.css'));
 
-    webviewView.webview.html = getWebviewHtml(webviewView.webview, markedUri, highlightJsUri, highlightCssUri);
+    webviewView.webview.html = await getWebviewHtml(webviewView.webview, markedUri, highlightJsUri, highlightCssUri, this._extensionUri);
 
     // Send initial history and model info
     setTimeout(() => {
@@ -667,6 +668,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       }]);
     } catch (error) {
       console.error('Failed to create temp file for analysis:', error);
+      ErrorService.getInstance().showError('Failed to prepare data for analysis. Using inline data instead.');
       // Fallback to old behavior if file writing fails
       const prompt = `I ran this query:\n\`\`\`sql\n${query}\n\`\`\`\n\nIt returned ${totalRows} rows. Here is the data:\n\n${dataCsv}\n\nPlease analyze this data.`;
       await this._handleUserMessage(prompt);

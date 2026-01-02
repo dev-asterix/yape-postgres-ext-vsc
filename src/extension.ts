@@ -7,7 +7,10 @@ import { SecretStorageService } from './services/SecretStorageService';
 import { ErrorHandlers } from './commands/helper';
 import { registerProviders } from './activation/providers';
 import { registerAllCommands } from './activation/commands';
+import { NotebookStatusBar } from './activation/statusBar';
 import { ChatViewProvider } from './providers/ChatViewProvider';
+import { QueryHistoryService } from './services/QueryHistoryService';
+import { ConnectionUtils } from './utils/connectionUtils';
 
 export let outputChannel: vscode.OutputChannel;
 
@@ -23,13 +26,14 @@ export async function activate(context: vscode.ExtensionContext) {
 
   SecretStorageService.getInstance(context);
   ConnectionManager.getInstance();
+  QueryHistoryService.initialize(context.workspaceState);
 
   const { databaseTreeProvider, chatViewProviderInstance: chatView } = registerProviders(context, outputChannel);
   chatViewProvider = chatView;
 
   registerAllCommands(context, databaseTreeProvider, chatView, outputChannel);
 
-  // TODO: Move kernel logic to src/activation/kernels.ts
+  // Kernel initialization
   const kernel = new PostgresKernel(context, 'postgres-notebook', async (msg: { type: string; command: string; format?: string; content?: string; filename?: string }) => {
     if (msg.type === 'custom' && msg.command === 'export') {
       vscode.commands.executeCommand('postgres-explorer.exportData', {
@@ -42,6 +46,10 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(kernel);
 
   const queryKernel = new PostgresKernel(context, 'postgres-query');
+
+  // Status bar for connection/database display
+  const statusBar = new NotebookStatusBar();
+  context.subscriptions.push(statusBar);
 
   const rendererMessaging = vscode.notebooks.createRendererMessaging('postgres-query-renderer');
   rendererMessaging.onDidReceiveMessage(async (event) => {
@@ -79,6 +87,44 @@ export async function activate(context: vscode.ExtensionContext) {
       }
       return;
     }
+
+    if (message.type === 'showConnectionSwitcher') {
+      const metadata = notebook.metadata as PostgresMetadata;
+      const selected = await ConnectionUtils.showConnectionPicker(message.connectionId);
+
+      if (selected && selected.id !== message.connectionId) {
+        await ConnectionUtils.updateNotebookMetadata(notebook, {
+          connectionId: selected.id,
+          databaseName: selected.database,
+          host: selected.host,
+          port: selected.port,
+          username: selected.username
+        });
+        vscode.window.showInformationMessage(`Switched to: ${selected.name || selected.host}`);
+        statusBar.update();
+      }
+      return;
+    }
+
+    if (message.type === 'showDatabaseSwitcher') {
+      const metadata = notebook.metadata as PostgresMetadata;
+      const connection = ConnectionUtils.findConnection(message.connectionId);
+
+      if (!connection) {
+        vscode.window.showErrorMessage('Connection not found');
+        return;
+      }
+
+      const selectedDb = await ConnectionUtils.showDatabasePicker(connection, message.currentDatabase);
+
+      if (selectedDb && selectedDb !== message.currentDatabase) {
+        await ConnectionUtils.updateNotebookMetadata(notebook, { databaseName: selectedDb });
+        vscode.window.showInformationMessage(`Switched to database: ${selectedDb}`);
+        statusBar.update();
+      }
+      return;
+    }
+
 
     if (message.type === 'execute_update_background') {
       const { statements } = message;
@@ -155,6 +201,88 @@ export async function activate(context: vscode.ExtensionContext) {
       } catch (err: any) {
         await ErrorHandlers.handleCommandError(err, 'generate delete script');
       }
+    } else if (message.type === 'saveChanges') {
+      // Handle saveChanges from renderer
+      const { updates, tableInfo } = message;
+      const { schema, table } = tableInfo;
+
+      try {
+        const metadata = notebook.metadata as PostgresMetadata;
+        if (!metadata?.connectionId) {
+          vscode.window.showErrorMessage('Cannot save changes: No connection in notebook metadata');
+          return;
+        }
+
+        const password = await SecretStorageService.getInstance().getPassword(metadata.connectionId);
+
+        const client = new Client({
+          host: metadata.host,
+          port: metadata.port,
+          database: metadata.databaseName,
+          user: metadata.username,
+          password: password || metadata.password || undefined,
+        });
+        await client.connect();
+
+        let successCount = 0;
+        let errorCount = 0;
+
+        for (const update of updates) {
+          const { keys, column, value } = update;
+
+          // Format value for SQL
+          let valueStr = 'NULL';
+          if (value !== null && value !== undefined) {
+            if (typeof value === 'boolean') {
+              valueStr = value ? 'TRUE' : 'FALSE';
+            } else if (typeof value === 'number') {
+              valueStr = String(value);
+            } else if (typeof value === 'object') {
+              valueStr = `'${JSON.stringify(value).replace(/'/g, "''")}'`;
+            } else {
+              valueStr = `'${String(value).replace(/'/g, "''")}'`;
+            }
+          }
+
+          // Format conditions
+          const conditions: string[] = [];
+          for (const [pk, pkVal] of Object.entries(keys)) {
+            let pkValStr = 'NULL';
+            if (pkVal !== null && pkVal !== undefined) {
+              if (typeof pkVal === 'number' || typeof pkVal === 'boolean') {
+                pkValStr = String(pkVal);
+              } else {
+                pkValStr = `'${String(pkVal).replace(/'/g, "''")}'`;
+              }
+            }
+            conditions.push(`"${pk}" = ${pkValStr}`);
+          }
+
+          const query = `UPDATE "${schema}"."${table}" SET "${column}" = ${valueStr} WHERE ${conditions.join(' AND ')}`;
+
+          try {
+            await client.query(query);
+            successCount++;
+          } catch (err: any) {
+            errorCount++;
+            console.error('Update failed:', query, err);
+          }
+        }
+
+        await client.end();
+
+        if (successCount > 0) {
+          vscode.window.showInformationMessage(`✅ Successfully saved ${successCount} change(s)${errorCount > 0 ? `, ${errorCount} failed` : ''}`);
+          // Notify renderer to clear modified cells
+          rendererMessaging.postMessage({ type: 'saveSuccess', successCount, errorCount });
+        } else if (errorCount > 0) {
+          vscode.window.showErrorMessage(`Failed to save changes: ${errorCount} error(s)`);
+        }
+      } catch (err: any) {
+        vscode.window.showErrorMessage(`Failed to save changes: ${err.message}`);
+      }
+    } else if (message.type === 'showErrorMessage') {
+      vscode.window.showErrorMessage(message.message);
     }
   });
 

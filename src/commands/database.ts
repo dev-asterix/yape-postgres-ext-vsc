@@ -38,7 +38,7 @@ export async function cmdDatabaseDashboard(item: DatabaseTreeItem, context: vsco
     // Release the client used for validation/setup immediately
     release();
 
-    await DashboardPanel.show(connection, item.databaseName!, connection.id);
+    await DashboardPanel.show(context.extensionUri, connection, item.databaseName!, connection.id);
   } catch (err: any) {
     await ErrorHandlers.handleCommandError(err, 'show dashboard');
   }

@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="{{CSP}}">
+  <title>Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    {{INLINE_STYLES}}
+  </style>
+</head>
+
+<body>
+  <div id="main-view">
+    <div class="header">
+      <div>
+        <h1 id="db-name">...</h1>
+        <div class="header-info">
+          <span id="db-owner">...</span>
+          <span id="db-size">...</span>
+          <span style="border-left: 1px solid var(--border-color); padding-left: 24px;">
+            <a href="#" data-action="showDetails" data-type="tables"
+              style="color: inherit; text-decoration: none; margin-right: 16px;" id="count-tables">... Tables</a>
+            <a href="#" data-action="showDetails" data-type="views"
+              style="color: inherit; text-decoration: none; margin-right: 16px;" id="count-views">... Views</a>
+            <a href="#" data-action="showDetails" data-type="functions" style="color: inherit; text-decoration: none;"
+              id="count-funcs">... Funcs</a>
+          </span>
+        </div>
+      </div>
+      <div>
+        <button class="btn-action" data-action="refresh">Refresh</button>
+      </div>
+    </div>
+
+    <!-- 1. Top Strip: Context + Risk -->
+    <div class="grid-strip">
+      <!-- Health Tile -->
+      <div class="card" id="tile-health">
+        <span class="label">DB Health</span>
+        <div class="value" style="display: flex; align-items: center;">
+          <span id="health-dot" class="status-dot status-ok"></span>
+          <span id="health-text">Healthy</span>
+        </div>
+        <div id="recommended-action"
+          style="display: none; font-size: 0.75rem; margin-top: 6px; padding: 4px 8px; background: rgba(248, 113, 113, 0.15); border-radius: 4px; color: var(--danger-color);">
+        </div>
+      </div>
+
+      <!-- Active Load -->
+      <div class="card interactive" data-action="jumpToQueries">
+        <span class="label">Active Load</span>
+        <div class="value" id="active-load-value">
+          ...
+        </div>
+        <div style="font-size: 0.8rem; color: var(--muted-color); margin-top: 4px;" id="active-load-sub">
+          No waits
+        </div>
+      </div>
+
+      <!-- Locks -->
+      <div class="card interactive" data-action="jumpToLocks">
+        <span class="label">Blocking Locks</span>
+        <div class="value" id="locks-tile-value">
+          ...
+        </div>
+      </div>
+
+      <!-- TPS -->
+      <div class="card" id="tps-card" title="Transactions per second">
+        <span class="label">Throughput (TPS)</span>
+        <div class="value">
+          <span id="tps-value">0</span>
+          <span id="tps-delta"
+            style="font-size: 0.6em; margin-left: 8px; font-weight: normal; color: var(--muted-color);"></span>
+        </div>
+        <div style="height: 20px; width: 100%;">
+          <canvas id="tpsSparkline"></canvas>
+        </div>
+      </div>
+
+      <!-- Issues / Events -->
+      <div class="card">
+        <span class="label" id="issues-label">Issues</span>
+        <div id="issues-card-content">
+          <!-- dynamic content -->
+        </div>
+      </div>
+    </div>
+
+    <!-- 2. Charts: Density without Noise -->
+    <div class="charts-row">
+      <div class="chart-box">
+        <div class="label" style="display: flex; justify-content: space-between;">
+          <span>Connections</span>
+          <!-- Max connections can be updated dynamically if we want, but usually static per session -->
+          <span style="font-size: 0.8em; color: var(--muted-color); font-weight: normal;">History</span>
+        </div>
+        <canvas id="connectionsHistoryChart"></canvas>
+      </div>
+      <div class="chart-box">
+        <div class="label">Rollback Spikes</div>
+        <canvas id="rollbackChart"></canvas>
+      </div>
+      <div class="chart-box">
+        <div class="label">Cache Hit Ratio</div>
+        <canvas id="cacheHitChart"></canvas>
+      </div>
+      <div class="chart-box">
+        <div class="label">Long Running (>5s)</div>
+        <canvas id="longRunningChart"></canvas>
+      </div>
+    </div>
+
+    <!-- 3. Active Queries (Main Event) -->
+    <div>
+      <div style="display: flex; justify-content: space-between; margin-bottom: 12px; align-items: flex-end;">
+        <h3 style="font-size: 1.1rem;">Active Queries</h3>
+        <span class="label" style="cursor: pointer;">View All &rarr;</span>
+      </div>
+
+      <div class="table-container">
+        <table id="active-queries-table">
+          <thead>
+            <tr>
+              <th style="width: 80px;">PID</th>
+              <th style="width: 100px;">User</th>
+              <th style="width: 80px;">Duration</th>
+              <th style="width: 140px;">Start Time</th>
+              <th>Query</th>
+              <th style="width: 120px; text-align: right;">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <!-- Populated by JS -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- 4. Locks & Blocking (Diagnostic) -->
+    <div id="locks-section" style="margin-top: 32px;">
+      <div style="margin-bottom: 12px;">
+        <h3 id="locks-title" style="font-size: 1.1rem; color: var(--fg-color);">Locks & Blocking</h3>
+      </div>
+      <div id="locks-table-container" class="table-container" style="border-color: var(--border-color);">
+        <table>
+          <thead>
+            <tr>
+              <th>Blocker (PID)</th>
+              <th>Waited By (PID)</th>
+              <th>Object</th>
+              <th>Mode</th>
+            </tr>
+          </thead>
+          <tbody>
+            <!-- Populated by JS -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+
+  <div id="detail-view">
+    <button class="back-link" data-action="hideDetails">← Back to Dashboard</button>
+    <h2 id="detail-title" style="font-weight: 500; font-size: 1.5em; margin-bottom: 32px;">Details</h2>
+    <div id="detail-content"></div>
+  </div>
+
+  <script nonce="{{NONCE}}">
+    {{INLINE_SCRIPTS}}
+  </script>
+</body>
+
+</html>
