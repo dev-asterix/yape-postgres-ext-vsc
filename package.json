@@ -860,14 +860,21 @@
           "id": "postgresExplorer.chatView",
           "name": "SQL Assistant",
           "type": "webview",
-          "contextualTitle": "SQL Assistant",
+          "contextualTitle": "PostgreSQL Explorer",
           "icon": "resources/ai-icon.png"
         },
         {
           "id": "postgresExplorer.history",
           "name": "Query History",
-          "contextualTitle": "Query History",
+          "contextualTitle": "PostgreSQL Explorer",
           "icon": "$(history)"
+        },
+        {
+          "id": "postgresExplorer.whatsNew",
+          "name": "What's New",
+          "type": "webview",
+          "contextualTitle": "PostgreSQL Explorer",
+          "icon": "resources/postgres-explorer.png"
         }
       ]
     },

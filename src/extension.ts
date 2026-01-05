@@ -8,6 +8,7 @@ import { ErrorHandlers } from './commands/helper';
 import { registerProviders } from './activation/providers';
 import { registerAllCommands } from './activation/commands';
 import { NotebookStatusBar } from './activation/statusBar';
+import { WhatsNewManager } from './activation/WhatsNewManager';
 import { ChatViewProvider } from './providers/ChatViewProvider';
 import { QueryHistoryService } from './services/QueryHistoryService';
 import { ConnectionUtils } from './utils/connectionUtils';
@@ -34,6 +35,7 @@ export async function activate(context: vscode.ExtensionContext) {
   registerAllCommands(context, databaseTreeProvider, chatView, outputChannel);
 
   // Kernel initialization
+  // Kernel initialization
   const kernel = new PostgresKernel(context, 'postgres-notebook', async (msg: { type: string; command: string; format?: string; content?: string; filename?: string }) => {
     if (msg.type === 'custom' && msg.command === 'export') {
       vscode.commands.executeCommand('postgres-explorer.exportData', {
@@ -44,6 +46,19 @@ export async function activate(context: vscode.ExtensionContext) {
     }
   });
   context.subscriptions.push(kernel);
+
+  // What's New / Welcome Screen
+  const whatsNewManager = new WhatsNewManager(context, context.extensionUri);
+  context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider('postgresExplorer.whatsNew', whatsNewManager)
+  );
+  await whatsNewManager.checkAndShow();
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('postgres-explorer.showWhatsNew', () => {
+      whatsNewManager.checkAndShow(true);
+    })
+  );
 
   const queryKernel = new PostgresKernel(context, 'postgres-query');
 
