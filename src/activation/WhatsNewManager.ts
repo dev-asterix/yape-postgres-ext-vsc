@@ -205,12 +205,25 @@ export class WhatsNewManager implements vscode.WebviewViewProvider {
   }
 
   private async getChangelogContent(): Promise<string> {
-    try {
-      const changelogPath = path.join(this.extensionUri.fsPath, 'CHANGELOG.md');
-      return await fs.promises.readFile(changelogPath, 'utf8');
-    } catch (e) {
-      console.error('Error reading changelog:', e);
-      return '# Error\nUnable to load CHANGELOG.md';
+    const variants = ['CHANGELOG.md', 'changelog.md', 'Changelog.md'];
+
+    for (const variant of variants) {
+      try {
+        const changelogPath = path.join(this.extensionUri.fsPath, variant);
+        return await fs.promises.readFile(changelogPath, 'utf8');
+      } catch {
+        // Try next variant
+      }
     }
+
+    // List what files actually exist in extension root for debugging
+    let files: string[] = [];
+    try {
+      files = await fs.promises.readdir(this.extensionUri.fsPath);
+    } catch {
+      files = ['(unable to list directory)'];
+    }
+
+    return `# Error\nUnable to load CHANGELOG.md\n\nExtension path: \`${this.extensionUri.fsPath}\`\n\nFiles in extension root:\n${files.map(f => `- ${f}`).join('\n')}`;
   }
 }
