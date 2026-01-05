@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { DatabaseTreeItem } from '../providers/DatabaseTreeProvider';
 import { DatabaseTreeProvider } from '../providers/DatabaseTreeProvider';
+import { QueryHistoryService } from '../services/QueryHistoryService';
 import { ChatViewProvider } from '../providers/ChatViewProvider';
 
 import { cmdAiAssist } from '../commands/aiAssist';
@@ -24,6 +25,7 @@ import { cmdCreateView, cmdDropView, cmdEditView, cmdRefreshView, cmdScriptCreat
 import { AiSettingsPanel } from '../aiSettingsPanel';
 import { ConnectionFormPanel } from '../connectionForm';
 import { ConnectionManagementPanel } from '../connectionManagement';
+import { ConnectionUtils } from '../utils/connectionUtils';
 
 export function registerAllCommands(
   context: vscode.ExtensionContext,
@@ -42,6 +44,45 @@ export function registerAllCommands(
       command: 'postgres-explorer.refreshConnections',
       callback: () => {
         databaseTreeProvider.refresh();
+      }
+    },
+    {
+      command: 'postgres-explorer.clearHistory',
+      callback: async () => {
+        await QueryHistoryService.getInstance().clear();
+        vscode.window.showInformationMessage('Query history cleared');
+      }
+    },
+    {
+      command: 'postgres-explorer.copyQuery',
+      callback: async (item: any) => {
+        // Handle both direct string (from context menu if configured that way) or TreeItem
+        const query = typeof item === 'string' ? item : item?.query;
+        if (query) {
+          await vscode.env.clipboard.writeText(query);
+          vscode.window.showInformationMessage('Query copied to clipboard');
+        }
+      }
+    },
+    {
+      command: 'postgres-explorer.deleteHistoryItem',
+      callback: async (item: any) => {
+        if (item && item.id) {
+          await QueryHistoryService.getInstance().delete(item.id);
+        }
+      }
+    },
+    {
+      command: 'postgres-explorer.openQuery',
+      callback: async (item: any) => {
+        const query = typeof item === 'string' ? item : item?.query;
+        if (query) {
+          const doc = await vscode.workspace.openTextDocument({
+            content: query,
+            language: 'sql'
+          });
+          await vscode.window.showTextDocument(doc);
+        }
       }
     },
     {
@@ -870,6 +911,89 @@ export function registerAllCommands(
     {
       command: 'postgres-explorer.addIndex',
       callback: async (item: DatabaseTreeItem) => await cmdAddIndex(item)
+    },
+
+    // Breadcrumb navigation commands
+    {
+      command: 'postgres-explorer.switchConnection',
+      callback: async () => {
+        const editor = ConnectionUtils.getActivePostgresNotebook();
+        if (!editor) {
+          vscode.window.showWarningMessage('No active PostgreSQL notebook.');
+          return;
+        }
+
+        const metadata = editor.notebook.metadata as any;
+        const selected = await ConnectionUtils.showConnectionPicker(metadata?.connectionId);
+
+        if (selected) {
+          await ConnectionUtils.updateNotebookMetadata(editor.notebook, {
+            connectionId: selected.id,
+            databaseName: selected.database,
+            host: selected.host,
+            port: selected.port,
+            username: selected.username
+          });
+          vscode.window.showInformationMessage(`Switched to: ${selected.name || selected.host}`);
+        }
+      }
+    },
+    {
+      command: 'postgres-explorer.navigateBreadcrumb',
+      callback: async (args: { type: string; connectionId?: string; database?: string; schema?: string; object?: string }) => {
+        // Reveal the item in the database tree based on breadcrumb segment
+        if (args?.type === 'connection' && args.connectionId) {
+          // Focus database explorer and reveal connection
+          await vscode.commands.executeCommand('postgresExplorer.focus');
+        }
+        // Future: could expand tree to specific schema/table
+      }
+    },
+    {
+      command: 'postgres-explorer.copyBreadcrumbPath',
+      callback: async (args: { connectionName?: string; database?: string; schema?: string; object?: string }) => {
+        const parts = [
+          args?.connectionName,
+          args?.database,
+          args?.schema,
+          args?.object
+        ].filter(Boolean);
+
+        if (parts.length > 0) {
+          const path = parts.join(' ▸ ');
+          await vscode.env.clipboard.writeText(path);
+          vscode.window.showInformationMessage('Breadcrumb path copied to clipboard');
+        }
+      }
+    },
+    {
+      command: 'postgres-explorer.switchDatabase',
+      callback: async () => {
+        const editor = ConnectionUtils.getActivePostgresNotebook();
+        if (!editor) {
+          vscode.window.showWarningMessage('No active PostgreSQL notebook.');
+          return;
+        }
+
+        const metadata = editor.notebook.metadata as any;
+        if (!metadata?.connectionId) {
+          vscode.window.showWarningMessage('No connection configured for this notebook.');
+          return;
+        }
+
+        const connection = ConnectionUtils.findConnection(metadata.connectionId);
+        if (!connection) {
+          vscode.window.showErrorMessage('Connection not found.');
+          return;
+        }
+
+        const selectedDb = await ConnectionUtils.showDatabasePicker(connection, metadata.databaseName);
+
+        if (selectedDb && selectedDb !== metadata.databaseName) {
+          await ConnectionUtils.updateNotebookMetadata(editor.notebook, { databaseName: selectedDb });
+          vscode.window.showInformationMessage(`Switched to database: ${selectedDb}`);
+        }
+      }
     },
   ];
 

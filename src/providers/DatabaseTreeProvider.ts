@@ -2,17 +2,17 @@ import { Client, PoolClient } from 'pg';
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { ConnectionManager } from '../services/ConnectionManager';
+import { getSchemaCache, SchemaCache } from '../lib/schema-cache';
 
-// Key format for favorites: "type:connectionId:database:schema:name"
 function buildItemKey(item: DatabaseTreeItem): string {
-  const parts = [item.type, item.connectionId || '', item.databaseName || '', item.schema || '', item.label];
-  return parts.join(':');
+  return [item.type, item.connectionId || '', item.databaseName || '', item.schema || '', item.label].join(':');
 }
 
 export class DatabaseTreeProvider implements vscode.TreeDataProvider<DatabaseTreeItem> {
   private _onDidChangeTreeData: vscode.EventEmitter<DatabaseTreeItem | undefined | null | void> = new vscode.EventEmitter<DatabaseTreeItem | undefined | null | void>();
   readonly onDidChangeTreeData: vscode.Event<DatabaseTreeItem | undefined | null | void> = this._onDidChangeTreeData.event;
   private disconnectedConnections: Set<string> = new Set();
+  private readonly _cache: SchemaCache = getSchemaCache();
 
   // Filter, Favorites, and Recent Items
   private _filterPattern: string = '';
@@ -229,6 +229,14 @@ export class DatabaseTreeProvider implements vscode.TreeDataProvider<DatabaseTre
   }
 
   refresh(element?: DatabaseTreeItem): void {
+    // Clear cache on manual refresh to ensure fresh data
+    if (!element) {
+      this._cache.clear();
+    } else if (element.connectionId && element.databaseName) {
+      this._cache.invalidateDatabase(element.connectionId, element.databaseName);
+    } else if (element.connectionId) {
+      this._cache.invalidateConnection(element.connectionId);
+    }
     this._onDidChangeTreeData.fire(element);
   }
 
@@ -245,9 +253,60 @@ export class DatabaseTreeProvider implements vscode.TreeDataProvider<DatabaseTre
     const connections = vscode.workspace.getConfiguration().get<any[]>('postgresExplorer.connections') || [];
 
     if (!element) {
-      // Root level - show connections
-      return connections.map(conn => new DatabaseTreeItem(
-        conn.name || `${conn.host}:${conn.port} `,
+      // Root level - show connections (grouped if configured)
+      const rootItems: DatabaseTreeItem[] = [];
+      const groupedConnections: { [key: string]: any[] } = {};
+      const ungroupedConnections: any[] = [];
+
+      connections.forEach(conn => {
+        if (conn.group) {
+          if (!groupedConnections[conn.group]) {
+            groupedConnections[conn.group] = [];
+          }
+          groupedConnections[conn.group].push(conn);
+        } else {
+          ungroupedConnections.push(conn);
+        }
+      });
+
+      // Add groups first
+      for (const groupName of Object.keys(groupedConnections).sort()) {
+        rootItems.push(new DatabaseTreeItem(
+          groupName,
+          vscode.TreeItemCollapsibleState.Collapsed,
+          'connection-group',
+          undefined
+        ));
+      }
+
+      // Add ungrouped connections
+      ungroupedConnections.forEach(conn => {
+        rootItems.push(new DatabaseTreeItem(
+          conn.name || `${conn.host}:${conn.port}`,
+          vscode.TreeItemCollapsibleState.Collapsed,
+          'connection',
+          conn.id,
+          undefined, // databaseName
+          undefined, // schema
+          undefined, // tableName
+          undefined, // columnName
+          undefined, // comment
+          undefined, // isInstalled
+          undefined, // installedVersion
+          undefined, // roleAttributes
+          this.disconnectedConnections.has(conn.id) // isDisconnected
+        ));
+      });
+
+      return rootItems;
+    }
+
+    if (element.type === 'connection-group') {
+      const groupName = element.label;
+      const groupConnections = connections.filter(c => c.group === groupName);
+
+      return groupConnections.map(conn => new DatabaseTreeItem(
+        conn.name || `${conn.host}:${conn.port}`,
         vscode.TreeItemCollapsibleState.Collapsed,
         'connection',
         conn.id,
@@ -263,31 +322,19 @@ export class DatabaseTreeProvider implements vscode.TreeDataProvider<DatabaseTre
       ));
     }
 
-    // Auto-connect on expansion: if connection is disconnected, mark it as connected
     if (element.type === 'connection' && element.connectionId && this.disconnectedConnections.has(element.connectionId)) {
-      console.log(`Connection ${element.connectionId} is being expanded, auto - connecting...`);
       this.markConnectionConnected(element.connectionId);
     }
 
     const connection = connections.find(c => c.id === element.connectionId);
     if (!connection) {
-      console.error(`Connection not found for ID: ${element.connectionId} `);
-      vscode.window.showErrorMessage('Connection configuration not found');
+      vscode.window.showErrorMessage('Connection not found');
       return [];
     }
 
     let client: PoolClient | undefined;
     try {
       const dbName = element.type === 'connection' ? 'postgres' : element.databaseName;
-
-      console.log(`Attempting to connect to ${connection.name} (${dbName})`);
-
-      // Use ConnectionManager to get a shared pooled client
-      // We must cast to any to handle the _originalEnd logic if we were using getConnection, 
-      // but here we switch to getPooledClient and will call release() explicitly or let the helper handle it.
-      // However, getChildren seems to assume it can hold onto 'client'?
-      // Wait, getChildren logic is: get client, run query, return items. It doesn't seem to pass client to items.
-      // So we should acquire, query, release.
 
       client = await ConnectionManager.getInstance().getPooledClient({
         id: connection.id,
@@ -298,55 +345,60 @@ export class DatabaseTreeProvider implements vscode.TreeDataProvider<DatabaseTre
         name: connection.name
       });
 
-      console.log(`Successfully connected to ${connection.name} `);
-
       switch (element.type) {
         case 'connection':
-          // At connection level, show Favorites (if any), Databases group and Users & Roles
           const items: DatabaseTreeItem[] = [];
 
-          // Check if there are favorites for this connection
-          const connectionFavorites = this.getFavoriteKeys().filter(key => {
-            const parts = key.split(':');
-            return parts[1] === element.connectionId;
-          });
+          const connectionFavorites = this.getFavoriteKeys().filter(key => key.split(':')[1] === element.connectionId);
           if (connectionFavorites.length > 0) {
             items.push(new DatabaseTreeItem('Favorites', vscode.TreeItemCollapsibleState.Collapsed, 'favorites-group', element.connectionId));
           }
 
-          // Check if there are recent items for this connection
-          const connectionRecent = this.getRecentKeys().filter(key => {
-            const parts = key.split(':');
-            return parts[1] === element.connectionId;
-          });
+          const connectionRecent = this.getRecentKeys().filter(key => key.split(':')[1] === element.connectionId);
           if (connectionRecent.length > 0) {
             items.push(new DatabaseTreeItem('Recent', vscode.TreeItemCollapsibleState.Collapsed, 'recent-group', element.connectionId));
           }
 
-          items.push(new DatabaseTreeItem('Databases', vscode.TreeItemCollapsibleState.Collapsed, 'databases-group', element.connectionId));
-          items.push(new DatabaseTreeItem('Users & Roles', vscode.TreeItemCollapsibleState.Collapsed, 'category', element.connectionId));
+          const dbCountResult = await client.query('SELECT COUNT(*) FROM pg_database');
+          items.push(new DatabaseTreeItem('Databases', vscode.TreeItemCollapsibleState.Collapsed, 'databases-group', element.connectionId, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, dbCountResult.rows[0].count));
+
+          const rolesCountResult = await client.query('SELECT COUNT(*) FROM pg_roles');
+          items.push(new DatabaseTreeItem('Users & Roles', vscode.TreeItemCollapsibleState.Collapsed, 'category', element.connectionId, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, rolesCountResult.rows[0].count));
           return items;
 
         case 'databases-group':
-          // Show all databases under the Databases group (including system databases)
-          const dbResult = await client.query(
-            "SELECT datname FROM pg_database ORDER BY datname"
-          );
+          // Fetch databases with size
+          const cacheKey = SchemaCache.buildKey(element.connectionId!, 'postgres', undefined, 'databases');
+          const dbResult = await this._cache.getOrFetch(cacheKey, async () => {
+            return await client!.query(`
+              SELECT datname, pg_size_pretty(pg_database_size(datname)) as size 
+              FROM pg_database 
+              ORDER BY datname
+            `);
+          });
           return dbResult.rows.map(row => new DatabaseTreeItem(
             row.datname,
             vscode.TreeItemCollapsibleState.Collapsed,
             'database',
             element.connectionId,
-            row.datname
+            row.datname,
+            undefined, // schema
+            undefined, // tableName
+            undefined, // columnName
+            undefined, // comment
+            undefined, // isInstalled
+            undefined, // installedVersion
+            undefined, // roleAttributes
+            undefined, // isDisconnected
+            undefined, // isFavorite
+            undefined, // count
+            undefined, // rowCount
+            row.size   // size
           ));
 
         case 'favorites-group':
-          // Show all favorited items for this connection
           const favoriteItems: DatabaseTreeItem[] = [];
-          const favoriteKeys = this.getFavoriteKeys().filter(key => {
-            const parts = key.split(':');
-            return parts[1] === element.connectionId;
-          });
+          const favoriteKeys = this.getFavoriteKeys().filter(key => key.split(':')[1] === element.connectionId);
 
           for (const key of favoriteKeys) {
             const parts = key.split(':');
@@ -424,10 +476,17 @@ export class DatabaseTreeProvider implements vscode.TreeDataProvider<DatabaseTre
 
         case 'database':
           // Return just the categories at database level
+          const schemaCountResult = await client.query(
+            "SELECT COUNT(*) FROM pg_namespace WHERE nspname NOT LIKE 'pg_%' AND nspname != 'information_schema'"
+          );
+
+          const extensionCountResult = await client.query('SELECT COUNT(*) FROM pg_available_extensions WHERE installed_version IS NOT NULL');
+          const fdwCountResult = await client.query('SELECT COUNT(*) FROM pg_foreign_data_wrapper');
+
           return [
-            new DatabaseTreeItem('Schemas', vscode.TreeItemCollapsibleState.Collapsed, 'category', element.connectionId, element.databaseName),
-            new DatabaseTreeItem('Extensions', vscode.TreeItemCollapsibleState.Collapsed, 'category', element.connectionId, element.databaseName),
-            new DatabaseTreeItem('Foreign Data Wrappers', vscode.TreeItemCollapsibleState.Collapsed, 'category', element.connectionId, element.databaseName)
+            new DatabaseTreeItem('Schemas', vscode.TreeItemCollapsibleState.Collapsed, 'category', element.connectionId, element.databaseName, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, schemaCountResult.rows[0].count),
+            new DatabaseTreeItem('Extensions', vscode.TreeItemCollapsibleState.Collapsed, 'category', element.connectionId, element.databaseName, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, extensionCountResult.rows[0].count),
+            new DatabaseTreeItem('Foreign Data Wrappers', vscode.TreeItemCollapsibleState.Collapsed, 'category', element.connectionId, element.databaseName, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, fdwCountResult.rows[0].count)
           ];
 
         case 'category':
@@ -534,17 +593,19 @@ i.relname as index_name,
               ));
 
             case 'Schemas':
+              // Fetch schemas with size (sum of relations)
               const schemaResult = await client.query(
-                `SELECT nspname as schema_name 
-                                 FROM pg_namespace 
-                                 WHERE nspname NOT LIKE 'pg_%' 
-                                   AND nspname != 'information_schema'
-                                 ORDER BY
-CASE 
-                                        WHEN nspname = 'public' THEN 0
-                                        ELSE 1
-END,
-  nspname`
+                `SELECT 
+                   n.nspname as schema_name,
+                   pg_size_pretty(SUM(COALESCE(pg_total_relation_size(c.oid), 0))) as size
+                 FROM pg_namespace n
+                 LEFT JOIN pg_class c ON n.oid = c.relnamespace
+                 WHERE n.nspname NOT LIKE 'pg_%' 
+                   AND n.nspname != 'information_schema'
+                 GROUP BY n.nspname
+                 ORDER BY
+                   CASE WHEN n.nspname = 'public' THEN 0 ELSE 1 END,
+                   n.nspname`
               );
 
               // If filter is active, only show schemas that have matching items
@@ -573,7 +634,18 @@ END,
                       'schema',
                       element.connectionId,
                       element.databaseName,
-                      row.schema_name
+                      row.schema_name,
+                      undefined, // tableName
+                      undefined, // columnName
+                      undefined, // comment
+                      undefined, // isInstalled
+                      undefined, // installedVersion
+                      undefined, // roleAttributes
+                      undefined, // isDisconnected
+                      undefined, // isFavorite
+                      undefined, // count
+                      undefined, // rowCount
+                      row.size   // size
                     ));
                   }
                 }
@@ -586,7 +658,18 @@ END,
                 'schema',
                 element.connectionId,
                 element.databaseName,
-                row.schema_name
+                row.schema_name,
+                undefined, // tableName
+                undefined, // columnName
+                undefined, // comment
+                undefined, // isInstalled
+                undefined, // installedVersion
+                undefined, // roleAttributes
+                undefined, // isDisconnected
+                undefined, // isFavorite
+                undefined, // count
+                undefined, // rowCount
+                row.size   // size
               ));
 
             case 'Extensions':
@@ -615,8 +698,17 @@ END,
 
             // Existing category cases for schema level items
             case 'Tables':
+              // Fetch tables with size and row count
               const tableResult = await client.query(
-                "SELECT table_name FROM information_schema.tables WHERE table_schema = $1 AND table_type = 'BASE TABLE' ORDER BY table_name",
+                `SELECT 
+                   t.table_name,
+                   c.reltuples::bigint as estimated_rows,
+                   pg_size_pretty(pg_total_relation_size(c.oid)) as size
+                 FROM information_schema.tables t
+                 JOIN pg_class c ON c.relname = t.table_name
+                 JOIN pg_namespace n ON n.oid = c.relnamespace AND n.nspname = t.table_schema
+                 WHERE t.table_schema = $1 AND t.table_type = 'BASE TABLE'
+                 ORDER BY t.table_name`,
                 [element.schema]
               );
               return tableResult.rows
@@ -637,7 +729,10 @@ END,
                     undefined, // installedVersion
                     undefined, // roleAttributes
                     undefined, // isDisconnected
-                    isFav      // isFavorite
+                    isFav,     // isFavorite
+                    undefined, // count
+                    row.estimated_rows, // rowCount
+                    row.size   // size
                   );
                 });
 
@@ -684,8 +779,17 @@ END,
                 });
 
             case 'Materialized Views':
+              // Fetch materialized views with stats
               const materializedViewResult = await client.query(
-                "SELECT matviewname as name FROM pg_matviews WHERE schemaname = $1 ORDER BY matviewname",
+                `SELECT 
+                   m.matviewname as name,
+                   c.reltuples::bigint as estimated_rows,
+                   pg_size_pretty(pg_total_relation_size(c.oid)) as size
+                 FROM pg_matviews m
+                 JOIN pg_class c ON c.relname = m.matviewname
+                 JOIN pg_namespace n ON n.oid = c.relnamespace AND n.nspname = m.schemaname
+                 WHERE m.schemaname = $1 
+                 ORDER BY m.matviewname`,
                 [element.schema]
               );
               return materializedViewResult.rows
@@ -700,7 +804,10 @@ END,
                     element.databaseName,
                     element.schema,
                     undefined, undefined, undefined, undefined, undefined, undefined, undefined,
-                    isFav
+                    isFav,
+                    undefined,
+                    row.estimated_rows,
+                    row.size
                   );
                 });
 
@@ -801,12 +908,12 @@ END,
           );
 
           return [
-            new DatabaseTreeItem(`Tables • ${tablesCountResult.rows[0].count} `, vscode.TreeItemCollapsibleState.Collapsed, 'category', element.connectionId, element.databaseName, element.schema),
-            new DatabaseTreeItem(`Views • ${viewsCountResult.rows[0].count} `, vscode.TreeItemCollapsibleState.Collapsed, 'category', element.connectionId, element.databaseName, element.schema),
-            new DatabaseTreeItem(`Functions • ${functionsCountResult.rows[0].count} `, vscode.TreeItemCollapsibleState.Collapsed, 'category', element.connectionId, element.databaseName, element.schema),
-            new DatabaseTreeItem(`Materialized Views • ${materializedViewsCountResult.rows[0].count} `, vscode.TreeItemCollapsibleState.Collapsed, 'category', element.connectionId, element.databaseName, element.schema),
-            new DatabaseTreeItem(`Types • ${typesCountResult.rows[0].count} `, vscode.TreeItemCollapsibleState.Collapsed, 'category', element.connectionId, element.databaseName, element.schema),
-            new DatabaseTreeItem(`Foreign Tables • ${foreignTablesCountResult.rows[0].count} `, vscode.TreeItemCollapsibleState.Collapsed, 'category', element.connectionId, element.databaseName, element.schema)
+            new DatabaseTreeItem('Tables', vscode.TreeItemCollapsibleState.Collapsed, 'category', element.connectionId, element.databaseName, element.schema, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, tablesCountResult.rows[0].count),
+            new DatabaseTreeItem('Views', vscode.TreeItemCollapsibleState.Collapsed, 'category', element.connectionId, element.databaseName, element.schema, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, viewsCountResult.rows[0].count),
+            new DatabaseTreeItem('Functions', vscode.TreeItemCollapsibleState.Collapsed, 'category', element.connectionId, element.databaseName, element.schema, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, functionsCountResult.rows[0].count),
+            new DatabaseTreeItem('Materialized Views', vscode.TreeItemCollapsibleState.Collapsed, 'category', element.connectionId, element.databaseName, element.schema, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, materializedViewsCountResult.rows[0].count),
+            new DatabaseTreeItem('Types', vscode.TreeItemCollapsibleState.Collapsed, 'category', element.connectionId, element.databaseName, element.schema, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, typesCountResult.rows[0].count),
+            new DatabaseTreeItem('Foreign Tables', vscode.TreeItemCollapsibleState.Collapsed, 'category', element.connectionId, element.databaseName, element.schema, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, foreignTablesCountResult.rows[0].count)
           ];
 
         case 'table':
@@ -894,7 +1001,7 @@ export class DatabaseTreeItem extends vscode.TreeItem {
   constructor(
     public readonly label: string,
     public readonly collapsibleState: vscode.TreeItemCollapsibleState,
-    public readonly type: 'connection' | 'database' | 'schema' | 'table' | 'view' | 'function' | 'column' | 'category' | 'materialized-view' | 'type' | 'foreign-table' | 'extension' | 'role' | 'databases-group' | 'favorites-group' | 'recent-group' | 'constraint' | 'index' | 'foreign-data-wrapper' | 'foreign-server' | 'user-mapping',
+    public readonly type: 'connection' | 'database' | 'schema' | 'table' | 'view' | 'function' | 'column' | 'category' | 'materialized-view' | 'type' | 'foreign-table' | 'extension' | 'role' | 'databases-group' | 'favorites-group' | 'recent-group' | 'constraint' | 'index' | 'foreign-data-wrapper' | 'foreign-server' | 'user-mapping' | 'connection-group',
     public readonly connectionId?: string,
     public readonly databaseName?: string,
     public readonly schema?: string,
@@ -906,22 +1013,24 @@ export class DatabaseTreeItem extends vscode.TreeItem {
     public readonly roleAttributes?: { [key: string]: boolean },
     public readonly isDisconnected?: boolean,
     public readonly isFavorite?: boolean,
-    public readonly count?: number  // For category item counts
+    public readonly count?: number,  // For category item counts
+    public readonly rowCount?: string | number, // Data row count
+    public readonly size?: string    // Data size
   ) {
     super(label, collapsibleState);
     if (type === 'category' && label) {
       // Create specific context value for categories (e.g., category-tables, category-views)
       const suffix = label.toLowerCase().replace(/\s+&\s+/g, '-').replace(/\s+/g, '-');
-      this.contextValue = `category - ${suffix} `;
+      this.contextValue = `category-${suffix}`;
     } else if (type === 'connection' && isDisconnected) {
       this.contextValue = 'connection-disconnected';
     } else {
       // Keep original contextValue - isFavorite flag is stored separately for star indicator
       // For favorites menu detection, we use description containing ★
-      this.contextValue = isInstalled ? `${type} -installed` : type;
+      this.contextValue = isInstalled ? `${type}-installed` : type;
     }
     this.tooltip = this.getTooltip(type, comment, roleAttributes);
-    this.description = this.getDescription(type, isInstalled, installedVersion, roleAttributes, isFavorite, count);
+    this.description = this.getDescription(type, isInstalled, installedVersion, roleAttributes, isFavorite, count, rowCount, size);
     this.iconPath = {
       connection: new vscode.ThemeIcon('plug', isDisconnected ? new vscode.ThemeColor('disabledForeground') : new vscode.ThemeColor('charts.blue')),
       database: new vscode.ThemeIcon('database', new vscode.ThemeColor('charts.purple')),
@@ -943,7 +1052,8 @@ export class DatabaseTreeItem extends vscode.TreeItem {
       index: new vscode.ThemeIcon('search', new vscode.ThemeColor('charts.purple')),
       'foreign-data-wrapper': new vscode.ThemeIcon('extensions', new vscode.ThemeColor('charts.blue')),
       'foreign-server': new vscode.ThemeIcon('server', new vscode.ThemeColor('charts.green')),
-      'user-mapping': new vscode.ThemeIcon('account', new vscode.ThemeColor('charts.yellow'))
+      'user-mapping': new vscode.ThemeIcon('account', new vscode.ThemeColor('charts.yellow')),
+      'connection-group': new vscode.ThemeIcon('folder', new vscode.ThemeColor('charts.blue'))
     }[type];
   }
 
@@ -954,12 +1064,12 @@ export class DatabaseTreeItem extends vscode.TreeItem {
       if (roleAttributes.rolcreatedb) attributes.push('Create DB');
       if (roleAttributes.rolcreaterole) attributes.push('Create Role');
       if (roleAttributes.rolcanlogin) attributes.push('Can Login');
-      return `${this.label} \n\nAttributes: \n${attributes.join('\n')} `;
+      return `${this.label} \n\nAttributes: \n${attributes.join('\n')}`;
     }
-    return comment ? `${this.label} \n\n${comment} ` : this.label;
+    return comment ? `${this.label} \n\n${comment}` : this.label;
   }
 
-  private getDescription(type: string, isInstalled?: boolean, installedVersion?: string, roleAttributes?: { [key: string]: boolean }, isFavorite?: boolean, count?: number): string | undefined {
+  private getDescription(type: string, isInstalled?: boolean, installedVersion?: string, roleAttributes?: { [key: string]: boolean }, isFavorite?: boolean, count?: number, rowCount?: string | number, size?: string): string | undefined {
     let desc: string | undefined = undefined;
 
     if (type === 'extension' && isInstalled) {
@@ -969,6 +1079,30 @@ export class DatabaseTreeItem extends vscode.TreeItem {
       if (roleAttributes.rolsuper) tags.push('superuser');
       if (roleAttributes.rolcanlogin) tags.push('login');
       desc = tags.length > 0 ? `(${tags.join(', ')})` : undefined;
+    } else if ((type === 'table' || type === 'materialized-view') && (rowCount !== undefined || size)) {
+      const parts = [];
+      if (rowCount !== undefined && rowCount !== null) {
+        // Handle -1 for never analyzed tables
+        const countVal = Number(rowCount);
+        if (countVal >= 0) {
+          parts.push(`${countVal} rows`);
+        } else {
+          // Optional: show "Not analyzed" or just size. 
+          // If -1, it usually means empty or not analyzed.
+          // Let's hide rows if negative
+        }
+      }
+      if (size) parts.push(size);
+
+      if (parts.length > 0) {
+        desc = parts.join(', ');
+      }
+    } else if ((type === 'database' || type === 'schema') && size) {
+      desc = size;
+    } else if (type === 'category' && count !== undefined && this.label === 'Extensions') {
+      desc = `• ${count} installed`;
+    } else if ((type === 'category' || type === 'databases-group') && count !== undefined) {
+      desc = `• ${count}`;
     }
 
     // Append muted star for favorites (★ is more subtle than ⭐)

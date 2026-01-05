@@ -1,8 +1,10 @@
 import { Client, Pool, PoolClient, ClientConfig, PoolConfig } from 'pg';
+import * as vscode from 'vscode';
 import * as fs from 'fs';
 import { ConnectionConfig } from '../common/types';
 import { SecretStorageService } from './SecretStorageService';
 import { SSHService } from './SSHService';
+import { ErrorService } from './ErrorService';
 
 export class ConnectionManager {
   private static instance: ConnectionManager;
@@ -18,60 +20,104 @@ export class ConnectionManager {
     return ConnectionManager.instance;
   }
 
-  /**
-   * Get a pooled client for ephemeral operations (metadata, autocomplete, etc.)
-   * Callers MUST release the client when done.
-   */
+  private isSSLFailure(err: any): boolean {
+    if (!err) return false;
+    const msg = (err.message || '').toString().toLowerCase();
+    // Common errors when server doesn't support SSL or handshake fails gracefully
+    return (
+      msg.includes('server does not support ssl') ||
+      err.code === 'ECONNRESET' ||
+      err.code === 'EPROTO'
+    );
+  }
+
+  private shouldFallback(config: ConnectionConfig, err: any): boolean {
+    const sslMode = config.sslmode || 'prefer';
+    // Only fallback if mode is prefer (or 'allow' - rare)
+    // require, verify-ca, verify-full should NOT fallback
+    if (sslMode !== 'prefer' && sslMode !== 'allow') {
+      return false;
+    }
+    return this.isSSLFailure(err);
+  }
+
+  /** Get a pooled client for ephemeral operations. Caller MUST release when done. */
   public async getPooledClient(config: ConnectionConfig): Promise<PoolClient> {
     const key = this.getConnectionKey(config);
-
     let pool = this.pools.get(key);
+
     if (!pool) {
       const clientConfig = await this.createClientConfig(config);
-      // Pool specific configuration
-      const poolConfig: PoolConfig = {
-        ...clientConfig,
-        max: 10, // Max connections per config
-        idleTimeoutMillis: 30000 // Close idle clients after 30s
-      };
-
-      pool = new Pool(poolConfig);
-
-      pool.on('error', (err) => {
-        console.error(`Unexpected error on idle client for ${key}`, err);
-        // Don't remove pool, just log. Connection issues will be caught on next checkout.
-      });
-
+      pool = this.createPool(clientConfig, key);
       this.pools.set(key, pool);
     }
 
-    return await pool.connect();
+    try {
+      return await pool.connect();
+    } catch (err: any) {
+      // Handle SSL Fallback
+      if (this.shouldFallback(config, err)) {
+        console.warn(`SSL connection failed for ${key}, falling back to non-SSL`, err);
+
+        // Remove the failed pool
+        this.pools.delete(key);
+        try { await pool.end(); } catch (e) { /* ignore */ }
+
+        // Create non-SSL pool
+        const clientConfig = await this.createClientConfig(config, true);
+        pool = this.createPool(clientConfig, key);
+        this.pools.set(key, pool);
+
+        return await pool.connect();
+      }
+      throw err;
+    }
   }
 
-  /**
-   * Get a persistent client for a specific session (Notebooks, Transactions).
-   * Caller is responsible for eventually closing this session calling removeSession.
-   */
+  private createPool(clientConfig: ClientConfig, key: string): Pool {
+    const poolConfig: PoolConfig = {
+      ...clientConfig,
+      max: 10,
+      idleTimeoutMillis: 30000
+    };
+    const pool = new Pool(poolConfig);
+    pool.on('error', (err) => {
+      console.error(`Pool error for ${key}`, err);
+      // Don't show modal for background pool errors, but could log to output channel in future
+    });
+    return pool;
+  }
+
+  /** Get a persistent client for a session (notebooks, transactions). */
   public async getSessionClient(config: ConnectionConfig, sessionId: string): Promise<Client> {
     const key = `${this.getConnectionKey(config)}:session:${sessionId}`;
+    if (this.sessions.has(key)) return this.sessions.get(key)!;
 
-    if (this.sessions.has(key)) {
-      const client = this.sessions.get(key)!;
-      // Should add a liveness check here ideally
-      return client;
-    }
-
+    // Try default/primary config first (usually SSL)
     const clientConfig = await this.createClientConfig(config);
-    const client = new Client(clientConfig);
+    let client = new Client(clientConfig);
 
-    await client.connect();
+    try {
+      await client.connect();
+    } catch (err: any) {
+      if (this.shouldFallback(config, err)) {
+        console.warn(`Session SSL connection failed for ${key}, falling back to non-SSL`, err);
+
+        // Retry with SSL disabled
+        const nonSSLConfig = await this.createClientConfig(config, true);
+        client = new Client(nonSSLConfig);
+        await client.connect();
+      } else {
+        throw err;
+      }
+    }
 
     client.on('end', () => this.sessions.delete(key));
     client.on('error', (err) => {
       console.error(`Session client error for ${key}`, err);
+      ErrorService.getInstance().showError(`Session connection error (${config.name}): ${err.message}`);
       this.sessions.delete(key);
     });
-
     this.sessions.set(key, client);
     return client;
   }
@@ -83,23 +129,17 @@ export class ConnectionManager {
     const client = this.sessions.get(key);
     if (client) {
       try {
-        // Restore original end if present (unlikely for session client but good practice)
         await client.end();
       } catch (e) {
         console.error(`Error closing session ${key}:`, e);
-      } finally {
-        this.sessions.delete(key);
       }
+      this.sessions.delete(key);
     }
   }
 
-  /**
-   * Close all pools and sessions for a given connection ID (e.g. on disconnect/edit)
-   */
+  /** Close all pools and sessions for a connection */
   public async closeConnection(config: ConnectionConfig): Promise<void> {
     const baseKey = this.getConnectionKey(config);
-
-    // Close Pool
     const pool = this.pools.get(baseKey);
     if (pool) {
       try {
@@ -108,7 +148,6 @@ export class ConnectionManager {
       this.pools.delete(baseKey);
     }
 
-    // Close all related sessions
     for (const [key, client] of this.sessions.entries()) {
       if (key.startsWith(baseKey)) {
         try {
@@ -118,10 +157,8 @@ export class ConnectionManager {
       }
     }
   }
-
-  // Helper to remove all connections for a connection ID regardless of DB
+  /** Remove all connections for a connection ID regardless of DB */
   public async closeAllConnectionsById(connectionId: string): Promise<void> {
-    // Create a list of keys to remove to avoid modification during iteration
     const poolKeysToRemove: string[] = [];
     for (const key of this.pools.keys()) {
       if (key.startsWith(`${connectionId}:`)) {
@@ -136,13 +173,9 @@ export class ConnectionManager {
         this.pools.delete(key);
       }
     }
-
     const sessionKeysToRemove: string[] = [];
     for (const key of this.sessions.keys()) {
-      // keys are "id:db:session:sessId"
-      if (key.startsWith(`${connectionId}:`)) {
-        sessionKeysToRemove.push(key);
-      }
+      if (key.startsWith(`${connectionId}:`)) sessionKeysToRemove.push(key);
     }
 
     for (const key of sessionKeysToRemove) {
@@ -173,18 +206,20 @@ export class ConnectionManager {
     return `${config.id}:${config.database || 'postgres'}`;
   }
 
-  private async createClientConfig(config: ConnectionConfig): Promise<ClientConfig> {
-    // Get password from secret storage if username is provided
+  private async createClientConfig(config: ConnectionConfig, forceDisableSSL: boolean = false): Promise<ClientConfig> {
     let password: string | undefined;
     if (config.username) {
       password = await SecretStorageService.getInstance().getPassword(config.id);
     }
 
-    // Build SSL configuration
     let sslConfig: boolean | any = false;
-    if (config.sslmode && config.sslmode !== 'disable') {
+    // Default to 'prefer' if empty/undefined.
+    // If forceDisableSSL is true, we ignore sslmode and leave sslConfig as false.
+    const sslMode = config.sslmode || 'prefer';
+
+    if (!forceDisableSSL && sslMode !== 'disable') {
       sslConfig = {
-        rejectUnauthorized: config.sslmode === 'verify-ca' || config.sslmode === 'verify-full',
+        rejectUnauthorized: sslMode === 'verify-ca' || sslMode === 'verify-full'
       };
 
       if (config.sslRootCertPath) {
@@ -206,7 +241,7 @@ export class ConnectionManager {
       password: password || undefined,
       database: config.database || 'postgres',
       connectionTimeoutMillis: (config.connectTimeout || 5) * 1000,
-      statement_timeout: config.statementTimeout || undefined,
+      statement_timeout: config.statementTimeout || vscode.workspace.getConfiguration('postgresExplorer').get<number>('queryTimeout') || undefined,
       application_name: config.applicationName || 'PgStudio',
       ssl: sslConfig || undefined,
       ...(config.options ? { options: config.options } : {})
@@ -221,6 +256,8 @@ export class ConnectionManager {
         );
         clientConfig.stream = stream as any;
       } catch (err: any) {
+        // SSH errors are critical for connection creation
+        ErrorService.getInstance().showError(`SSH Connection failed: ${err.message}`);
         throw new Error(`SSH Connection failed: ${err.message}`);
       }
     } else {
@@ -231,3 +268,4 @@ export class ConnectionManager {
     return clientConfig;
   }
 }
+

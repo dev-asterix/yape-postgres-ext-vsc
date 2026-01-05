@@ -1,38 +1,43 @@
-/**
- * Creates a styled button element
- */
-export const createButton = (text: string, primary: boolean = false): HTMLButtonElement => {
-  const btn = document.createElement('button');
-  btn.textContent = text;
-  btn.style.background = primary ? 'var(--vscode-button-background)' : 'var(--vscode-button-secondaryBackground)';
-  btn.style.color = primary ? 'var(--vscode-button-foreground)' : 'var(--vscode-button-secondaryForeground)';
-  btn.style.border = 'none';
-  btn.style.padding = '4px 12px';
-  btn.style.cursor = 'pointer';
-  btn.style.borderRadius = '2px';
-  btn.style.fontSize = '12px';
-  btn.style.fontWeight = '500';
-  return btn;
-};
 
-/**
- * Creates a styled tab button
- */
-export const createTab = (label: string, id: string, isActive: boolean, onClick: () => void): HTMLButtonElement => {
-  const tab = document.createElement('button');
-  tab.textContent = label;
-  tab.dataset.tabId = id;
+export function createButton(text: string, isSmall = false): HTMLElement {
+  const btn = document.createElement('button');
+  btn.innerText = text;
+  btn.style.cssText = `
+    background: var(--vscode-button-secondaryBackground);
+    color: var(--vscode-button-secondaryForeground);
+    border: none;
+    padding: ${isSmall ? '4px 8px' : '6px 12px'};
+    border-radius: 2px;
+    cursor: pointer;
+    font-family: var(--vscode-font-family);
+    font-size: ${isSmall ? '11px' : '13px'};
+    display: inline-flex; align-items: center; gap: 4px;
+    user-select: none;
+  `;
+  btn.onmouseover = () => {
+    btn.style.background = 'var(--vscode-button-secondaryHoverBackground)';
+  };
+  btn.onmouseout = () => {
+    btn.style.background = 'var(--vscode-button-secondaryBackground)';
+  };
+  return btn;
+}
+
+export function createTab(text: string, id: string, isActive: boolean, onClick: () => void): HTMLElement {
+  const tab = document.createElement('div');
+  tab.textContent = text;
   tab.style.cssText = `
-        padding: 8px 16px;
-        border: none;
-        background: ${isActive ? 'var(--vscode-tab-activeBackground)' : 'transparent'};
-        color: ${isActive ? 'var(--vscode-tab-activeForeground)' : 'var(--vscode-tab-inactiveForeground)'};
-        border-bottom: ${isActive ? '2px solid var(--vscode-focusBorder)' : '2px solid transparent'};
-        cursor: pointer;
-        font-size: 12px;
-        font-weight: 500;
-        transition: all 0.15s;
+      padding: 8px 12px;
+      cursor: pointer;
+      font-size: 13px;
+      user-select: none;
+      border-bottom: 2px solid ${isActive ? 'var(--vscode-focusBorder)' : 'transparent'};
+      opacity: ${isActive ? '1' : '0.6'};
+      transition: opacity 0.2s;
     `;
-  tab.addEventListener('click', onClick);
+  tab.onclick = onClick;
   return tab;
-};
+}
+
+// Re-export breadcrumb from dedicated module
+export { createBreadcrumb, BreadcrumbSegment, BreadcrumbOptions } from './Breadcrumb';

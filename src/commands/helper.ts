@@ -9,9 +9,7 @@ export { SQL_TEMPLATES, QueryBuilder, MaintenanceTemplates } from './sql/helper'
 
 export { validateItem, validateCategoryItem, validateRoleItem };
 
-/**
- * Helper to get database connection and metadata
- */
+/** Get database connection and metadata for tree item operations */
 export async function getDatabaseConnection(item: DatabaseTreeItem, validateFn: (item: DatabaseTreeItem) => void = validateItem) {
   validateFn(item);
   const connection = await getConnectionWithPassword(item.connectionId!);
@@ -31,10 +29,7 @@ export async function getDatabaseConnection(item: DatabaseTreeItem, validateFn: 
     release: () => client.release()
   };
 }
-
-/**
- * Fluent Builder for Notebooks
- */
+/** Fluent builder for notebook cells */
 export class NotebookBuilder {
   private cells: vscode.NotebookCellData[] = [];
 
@@ -54,46 +49,24 @@ export class NotebookBuilder {
     await createAndShowNotebook(this.cells, this.metadata);
   }
 }
-
-/**
- * Markdown formatting utilities
- */
+/** Markdown formatting utilities */
 export const MarkdownUtils = {
-  /**
-   * Create an info box
-   */
-  infoBox: (message: string, title: string = 'Note'): string =>
+  infoBox: (message: string, title = 'Note'): string =>
     `<div style="font-size: 12px; background-color: rgba(52, 152, 219, 0.1); border-left: 3px solid #3498db; padding: 6px 10px; margin-bottom: 15px; border-radius: 3px; color: var(--vscode-editor-foreground);">
     <strong>ℹ️ ${title}:</strong> ${message}
 </div>`,
-
-  /**
-   * Create a warning box
-   */
-  warningBox: (message: string, title: string = 'Warning'): string =>
+  warningBox: (message: string, title = 'Warning'): string =>
     `<div style="font-size: 12px; background-color: rgba(231, 76, 60, 0.1); border-left: 3px solid #e74c3c; padding: 6px 10px; margin-bottom: 15px; border-radius: 3px; color: var(--vscode-editor-foreground);">
     <strong>⚠️ ${title}:</strong> ${message}
 </div>`,
-
-  /**
-   * Create a danger/caution box
-   */
-  dangerBox: (message: string, title: string = 'DANGER'): string =>
+  dangerBox: (message: string, title = 'DANGER'): string =>
     `<div style="font-size: 12px; background-color: rgba(231, 76, 60, 0.1); border-left: 3px solid #e74c3c; padding: 6px 10px; margin-bottom: 15px; border-radius: 3px; color: var(--vscode-editor-foreground);">
     <strong>🛑 ${title}:</strong> ${message}
 </div>`,
-
-  /**
-   * Create a success/tip box
-   */
-  successBox: (message: string, title: string = 'Tip'): string =>
+  successBox: (message: string, title = 'Tip'): string =>
     `<div style="font-size: 12px; background-color: rgba(46, 204, 113, 0.1); border-left: 3px solid #2ecc71; padding: 6px 10px; margin-bottom: 15px; border-radius: 3px; color: var(--vscode-editor-foreground);">
     <strong>💡 ${title}:</strong> ${message}
 </div>`,
-
-  /**
-   * Create a simple operations table
-   */
   operationsTable: (operations: Array<{ operation: string, description: string, riskLevel?: string }>): string => {
     const rows = operations.map(op => {
       const risk = op.riskLevel ? `<td>${op.riskLevel}</td>` : '';
@@ -109,10 +82,6 @@ export const MarkdownUtils = {
 ${rows}
 </table>`;
   },
-
-  /**
-   * Create a properties table
-   */
   propertiesTable: (properties: Record<string, string>): string => {
     const rows = Object.entries(properties).map(([key, value]) =>
       `    <tr><td><strong>${key}</strong></td><td>${value}</td></tr>`
@@ -123,23 +92,13 @@ ${rows}
 ${rows}
 </table>`;
   },
-
-  /**
-   * Create a header for notebook pages
-   */
   header: (title: string, subtitle?: string): string => {
-    const sub = subtitle ? `\n\n${subtitle}` : '';
-    return `### ${title}${sub}\n\n`;
+    return subtitle ? `### ${title}\n\n${subtitle}\n\n` : `### ${title}\n\n`;
   }
 };
 
-/**
- * Object kind/type utilities
- */
+/** PostgreSQL object utilities */
 export const ObjectUtils = {
-  /**
-   * Get icon/label for PostgreSQL object kind
-   */
   getKindLabel: (kind: string): string => {
     const labels: Record<string, string> = {
       'r': '📊 Table',
@@ -156,10 +115,6 @@ export const ObjectUtils = {
     };
     return labels[kind] || kind;
   },
-
-  /**
-   * Get icon for constraint type
-   */
   getConstraintIcon: (type: string): string => {
     const icons: Record<string, string> = {
       'PRIMARY KEY': '🔑',
@@ -170,24 +125,14 @@ export const ObjectUtils = {
     };
     return icons[type] || '📌';
   },
-
-  /**
-   * Get icon for index type
-   */
   getIndexIcon: (isPrimary: boolean, isUnique: boolean): string => {
     if (isPrimary) return '🔑';
     if (isUnique) return '⭐';
     return '🔍';
   }
 };
-
-/**
- * Format helpers for displaying data
- */
+/** Format helpers for display */
 export const FormatHelpers = {
-  /**
-   * Format bytes to human readable
-   */
   formatBytes: (bytes: number): string => {
     if (bytes === 0) return '0 Bytes';
     const k = 1024;
@@ -195,50 +140,17 @@ export const FormatHelpers = {
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
   },
-
-  /**
-   * Format boolean to yes/no with icons
-   */
-  formatBoolean: (value: boolean, trueText: string = 'Yes', falseText: string = 'No'): string => {
-    return value ? `✅ ${trueText}` : `🚫 ${falseText}`;
-  },
-
-  /**
-   * Escape SQL string literals
-   */
-  escapeSqlString: (str: string): string => {
-    return str.replace(/'/g, "''");
-  },
-
-  /**
-   * Format array for display
-   */
-  formatArray: (arr: any[], emptyText: string = '—'): string => {
-    return arr && arr.length > 0 ? arr.join(', ') : emptyText;
-  },
-
-  /**
-   * Format number with commas
-   */
-  formatNumber: (num: number): string => {
-    return num.toLocaleString();
-  },
-
-  /**
-   * Format percentage
-   */
-  formatPercentage: (num: number): string => {
-    return `${num}%`;
-  }
+  formatBoolean: (value: boolean, trueText = 'Yes', falseText = 'No'): string =>
+    value ? `✅ ${trueText}` : `🚫 ${falseText}`,
+  escapeSqlString: (str: string): string => str.replace(/'/g, "''"),
+  formatArray: (arr: any[], emptyText = '—'): string =>
+    arr?.length ? arr.join(', ') : emptyText,
+  formatNumber: (num: number): string => num.toLocaleString(),
+  formatPercentage: (num: number): string => `${num}%`
 };
 
-/**
- * Validation helpers
- */
+/** Validation helpers */
 export const ValidationHelpers = {
-  /**
-   * Validate column name
-   */
   validateColumnName: (value: string): string | null => {
     if (!value) return 'Column name cannot be empty';
     if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(value)) {
@@ -246,11 +158,7 @@ export const ValidationHelpers = {
     }
     return null;
   },
-
-  /**
-   * Validate identifier (table, view, function name, etc.)
-   */
-  validateIdentifier: (value: string, objectType: string = 'object'): string | null => {
+  validateIdentifier: (value: string, objectType = 'object'): string | null => {
     if (!value) return `${objectType} name cannot be empty`;
     if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(value)) {
       return `Invalid ${objectType} name. Use only letters, numbers, and underscores.`;
@@ -258,44 +166,19 @@ export const ValidationHelpers = {
     return null;
   }
 };
-
-/**
- * Common error handling patterns
- */
+/** Error handling patterns */
 export const ErrorHandlers = {
-  /**
-   * Show error with optional action button
-   */
-  showError: async (message: string, actionLabel?: string, actionCommand?: string): Promise<void> => {
-    return ErrorService.getInstance().showError(message, actionLabel, actionCommand);
-  },
-
-  /**
-   * Standard error handler for command operations
-   */
-  handleCommandError: async (err: any, operation: string): Promise<void> => {
-    return ErrorService.getInstance().handleCommandError(err, operation);
-  }
+  showError: async (message: string, actionLabel?: string, actionCommand?: string): Promise<void> =>
+    ErrorService.getInstance().showError(message, actionLabel, actionCommand),
+  handleCommandError: async (err: any, operation: string): Promise<void> =>
+    ErrorService.getInstance().handleCommandError(err, operation)
 };
 
-/**
- * String cleaning utilities
- */
+/** String cleaning utilities */
 export const StringUtils = {
-  /**
-   * Remove markdown code blocks from response
-   */
-  cleanMarkdownCodeBlocks: (text: string): string => {
-    return text
-      .replace(/^```sql\n/, '')
-      .replace(/^```\n/, '')
-      .replace(/\n```$/, '');
-  },
-
-  /**
-   * Truncate string with ellipsis
-   */
-  truncate: (text: string, maxLength: number): string => {
-    return text.length > maxLength ? text.substring(0, maxLength - 3) + '...' : text;
-  }
+  cleanMarkdownCodeBlocks: (text: string): string =>
+    text.replace(/^```sql\n/, '').replace(/^```\n/, '').replace(/\n```$/, ''),
+  truncate: (text: string, maxLength: number): string =>
+    text.length > maxLength ? text.substring(0, maxLength - 3) + '...' : text
 };
+

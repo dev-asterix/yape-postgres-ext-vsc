@@ -4,6 +4,7 @@ import { DatabaseTreeProvider } from '../providers/DatabaseTreeProvider';
 import { PostgresNotebookProvider } from '../notebookProvider';
 import { PostgresNotebookSerializer } from '../postgresNotebook';
 import { AiCodeLensProvider } from '../providers/AiCodeLensProvider';
+import { QueryHistoryProvider } from '../providers/QueryHistoryProvider';
 
 export function registerProviders(context: vscode.ExtensionContext, outputChannel: vscode.OutputChannel) {
   // Create database tree provider instance
@@ -72,6 +73,12 @@ export function registerProviders(context: vscode.ExtensionContext, outputChanne
     )
   );
   outputChannel.appendLine('AiCodeLensProvider registered for postgres and sql languages.');
+
+  // Register Query History Provider
+  const queryHistoryProvider = new QueryHistoryProvider();
+  context.subscriptions.push(
+    vscode.window.registerTreeDataProvider('postgresExplorer.history', queryHistoryProvider)
+  );
 
   return {
     databaseTreeProvider,

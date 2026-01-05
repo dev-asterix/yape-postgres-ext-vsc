@@ -10,7 +10,7 @@ export const createExportButton = (
   const exportBtn = createButton('Export ▼', true);
   exportBtn.style.position = 'relative';
 
-  exportBtn.addEventListener('click', (e) => {
+  exportBtn.addEventListener('click', (e: MouseEvent) => {
     e.stopPropagation();
 
     // Remove existing dropdown if any

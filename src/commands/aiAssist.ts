@@ -4,7 +4,6 @@ import { ConnectionManager } from '../services/ConnectionManager';
 import { PostgresMetadata } from '../common/types';
 import { AiService } from '../providers/chat/AiService';
 
-// Interface for table schema information
 interface TableSchemaInfo {
   tableName: string;
   schemaName: string;
@@ -30,7 +29,6 @@ interface TableSchemaInfo {
   }>;
 }
 
-// Interface for cell context
 interface CellContext {
   currentQuery: string;
   cellIndex: number;
@@ -44,22 +42,14 @@ interface CellContext {
 }
 
 export async function cmdAiAssist(cell: vscode.NotebookCell | undefined, context: vscode.ExtensionContext, outputChannel: vscode.OutputChannel) {
-  outputChannel.appendLine('AI Assist command triggered');
-
   if (!cell) {
-    outputChannel.appendLine('No cell provided in arguments, checking active notebook editor');
-    const activeEditor = vscode.window.activeNotebookEditor;
-    if (activeEditor && activeEditor.selection) {
-      // Get the first selected cell
-      if (activeEditor.selection.start < activeEditor.notebook.cellCount) {
-        cell = activeEditor.notebook.cellAt(activeEditor.selection.start);
-        outputChannel.appendLine(`Found active cell at index ${activeEditor.selection.start}`);
-      }
+    const editor = vscode.window.activeNotebookEditor;
+    if (editor?.selection && editor.selection.start < editor.notebook.cellCount) {
+      cell = editor.notebook.cellAt(editor.selection.start);
     }
   }
 
   if (!cell) {
-    outputChannel.appendLine('No cell found');
     vscode.window.showErrorMessage('No cell selected');
     return;
   }
@@ -86,13 +76,10 @@ export async function cmdAiAssist(cell: vscode.NotebookCell | undefined, context
     }, async (progress, token) => {
 
       progress.report({ message: "Gathering context..." });
-
-      // Gather cell context including table schemas
       const cellContext = await gatherCellContext(validCell, context, outputChannel);
 
       progress.report({ message: "Generating response..." });
 
-      // Build the comprehensive prompt to be used as System Prompt
       const systemPrompt = buildPrompt(userInput, cellContext);
       const userTrigger = "Please provide the SQL query based on the instructions above.";
 
@@ -103,25 +90,18 @@ export async function cmdAiAssist(cell: vscode.NotebookCell | undefined, context
       } else {
         responseText = await aiService.callDirectApi(provider, userTrigger, config, systemPrompt);
       }
-
-      // Parse the response to check for placement instruction
       const { query, placement } = parseAiResponse(responseText);
-
-      // Clean up response if it contains markdown code blocks despite instructions
       const cleanedQuery = StringUtils.cleanMarkdownCodeBlocks(query);
 
       if (cleanedQuery.trim()) {
         if (placement === 'new_cell') {
-          // Add as a new cell below the current one
           const notebook = validCell.notebook;
           const targetIndex = validCell.index + 1;
-
           const newCellData = new vscode.NotebookCellData(
             vscode.NotebookCellKind.Code,
             cleanedQuery,
             'sql'
           );
-
           const notebookEdit = new vscode.NotebookEdit(
             new vscode.NotebookRange(targetIndex, targetIndex),
             [newCellData]
@@ -131,9 +111,8 @@ export async function cmdAiAssist(cell: vscode.NotebookCell | undefined, context
           workspaceEdit.set(notebook.uri, [notebookEdit]);
           await vscode.workspace.applyEdit(workspaceEdit);
 
-          vscode.window.showInformationMessage(`AI (${modelInfo}) response added as new cell below for comparison.`);
+          vscode.window.showInformationMessage(`AI (${modelInfo}) added response as new cell.`);
         } else {
-          // Replace the current cell content (default behavior)
           const edit = new vscode.WorkspaceEdit();
           edit.replace(
             validCell.document.uri,
@@ -142,7 +121,7 @@ export async function cmdAiAssist(cell: vscode.NotebookCell | undefined, context
           );
           await vscode.workspace.applyEdit(edit);
 
-          vscode.window.showInformationMessage(`AI (${modelInfo}) response has replaced the current cell content.`);
+          vscode.window.showInformationMessage(`AI (${modelInfo}) updated cell content.`);
         }
       }
     });
@@ -158,23 +137,18 @@ export async function cmdAiAssist(cell: vscode.NotebookCell | undefined, context
   }
 }
 
-/**
- * Gather context from the cell and notebook for AI assistance
- */
 async function gatherCellContext(cell: vscode.NotebookCell, context: vscode.ExtensionContext, outputChannel: vscode.OutputChannel): Promise<CellContext> {
   const currentQuery = cell.document.getText();
-  const cellIndex = cell.index;
+  const idx = cell.index;
 
-  // Get previous cells content (up to 5 previous SQL cells for context)
   const previousCells: string[] = [];
-  for (let i = Math.max(0, cellIndex - 5); i < cellIndex; i++) {
+  for (let i = Math.max(0, idx - 5); i < idx; i++) {
     const prevCell = cell.notebook.cellAt(i);
     if (prevCell.kind === vscode.NotebookCellKind.Code) {
       previousCells.push(prevCell.document.getText());
     }
   }
 
-  // Try to get the last output of the current cell
   let lastOutput: string | undefined;
   if (cell.outputs && cell.outputs.length > 0) {
     const lastOutputItem = cell.outputs[cell.outputs.length - 1];
@@ -242,8 +216,6 @@ async function gatherCellContext(cell: vscode.NotebookCell, context: vscode.Exte
       }
     }
   }
-
-  // Extract table names from query and fetch their schemas
   const tableSchemas: TableSchemaInfo[] = [];
   const tableNames = extractTableNames(currentQuery);
 
@@ -285,21 +257,15 @@ async function gatherCellContext(cell: vscode.NotebookCell, context: vscode.Exte
       outputChannel.appendLine('Failed to connect for schema fetch: ' + e);
     }
   }
-
-  // Get database info
   let databaseInfo: { name: string; version?: string } | undefined;
   try {
     const metadata = cell.notebook.metadata as PostgresMetadata;
-    if (metadata?.databaseName) {
-      databaseInfo = { name: metadata.databaseName };
-    }
-  } catch (e) {
-    // Ignore
-  }
+    if (metadata?.databaseName) databaseInfo = { name: metadata.databaseName };
+  } catch { }
 
   return {
     currentQuery,
-    cellIndex,
+    cellIndex: idx,
     previousCells,
     lastOutput,
     tableSchemas,
@@ -307,16 +273,10 @@ async function gatherCellContext(cell: vscode.NotebookCell, context: vscode.Exte
   };
 }
 
-/**
- * Parse AI response to extract query and placement instruction
- */
 function parseAiResponse(response: string): { query: string; placement: 'replace' | 'new_cell' } {
   const lines = response.trim().split('\n');
   let placement: 'replace' | 'new_cell' = 'replace';
-  let queryLines: string[] = [];
-
-  // Look for placement instruction at the beginning or end of the response
-  // Format: [PLACEMENT: new_cell] or [PLACEMENT: replace]
+  const queryLines: string[] = [];
   const placementRegex = /\[PLACEMENT:\s*(new_cell|replace)\]/i;
 
   for (const line of lines) {
@@ -328,7 +288,6 @@ function parseAiResponse(response: string): { query: string; placement: 'replace
     }
   }
 
-  // Also check for placement in SQL comments
   const commentPlacementRegex = /--\s*PLACEMENT:\s*(new_cell|replace)/i;
   const filteredLines: string[] = [];
 
@@ -347,13 +306,8 @@ function parseAiResponse(response: string): { query: string; placement: 'replace
   };
 }
 
-/**
- * Extract table names from SQL query
- */
 function extractTableNames(query: string): Array<{ schema: string; table: string }> {
   const tables: Array<{ schema: string; table: string }> = [];
-
-  // Patterns to match table references
   const patterns = [
     // FROM/JOIN clause: FROM schema.table or FROM table
     /(?:FROM|JOIN)\s+(?:"?(\w+)"?\.)?"?(\w+)"?(?:\s+(?:AS\s+)?\w+)?/gi,
@@ -386,13 +340,8 @@ function extractTableNames(query: string): Array<{ schema: string; table: string
   return tables;
 }
 
-/**
- * Fetch table schema from database
- */
 async function fetchTableSchema(client: any, tableRef: { schema: string; table: string }): Promise<TableSchemaInfo | null> {
   const { schema, table } = tableRef;
-
-  // Fetch columns
   const columnsResult = await client.query(`
         SELECT 
             c.column_name,
@@ -431,12 +380,7 @@ async function fetchTableSchema(client: any, tableRef: { schema: string; table: 
         WHERE c.table_schema = $1 AND c.table_name = $2
         ORDER BY c.ordinal_position
     `, [schema, table]);
-
-  if (columnsResult.rows.length === 0) {
-    return null;
-  }
-
-  // Fetch indexes
+  if (columnsResult.rows.length === 0) return null;
   const indexesResult = await client.query(`
         SELECT 
             i.relname as index_name,
@@ -451,8 +395,6 @@ async function fetchTableSchema(client: any, tableRef: { schema: string; table: 
         WHERE n.nspname = $1 AND t.relname = $2
         GROUP BY i.relname, ix.indisunique, ix.indisprimary
     `, [schema, table]);
-
-  // Fetch constraints
   const constraintsResult = await client.query(`
         SELECT 
             tc.constraint_name,
@@ -492,7 +434,6 @@ async function fetchTableSchema(client: any, tableRef: { schema: string; table: 
 
 function buildPrompt(userInput: string, cellContext: CellContext): string {
   const { currentQuery, previousCells, lastOutput, tableSchemas, databaseInfo } = cellContext;
-
   // Build table schema context
   let schemaContext = '';
   if (tableSchemas.length > 0) {
@@ -523,25 +464,16 @@ function buildPrompt(userInput: string, cellContext: CellContext): string {
     }
   }
 
-  // Build previous cells context
   let previousContext = '';
   if (previousCells.length > 0) {
     previousContext = '\n\n## Previous Queries in Notebook (for context)\n```sql\n';
     previousContext += previousCells.slice(-3).join('\n\n-- Next query --\n');
     previousContext += '\n```';
   }
-
-  // Build output context
   let outputContext = '';
-  if (lastOutput) {
-    outputContext = `\n\n## Last Execution Output\n\`\`\`\n${lastOutput}\n\`\`\``;
-  }
-
-  // Build database context
+  if (lastOutput) outputContext = `\n\n## Last Execution Output\n\`\`\`\n${lastOutput}\n\`\`\``;
   let dbContext = '';
-  if (databaseInfo) {
-    dbContext = `\n\n## Database: ${databaseInfo.name}`;
-  }
+  if (databaseInfo) dbContext = `\n\n## Database: ${databaseInfo.name}`;
 
   return `# PostgreSQL Query Assistant
 
@@ -600,13 +532,7 @@ Then provide the SQL query. Remember: NO markdown formatting, just the raw SQL (
 `;
 }
 
-/**
- * AI Task Selector utility with comprehensive task options
- */
 const AiTaskSelector = {
-  /**
-   * Available AI tasks organized by category
-   */
   tasks: [
     // Custom - Always First
     { label: '$(edit) Custom Instruction', description: 'Enter your own instruction', detail: 'Tell the AI exactly what you want to do with this query', kind: vscode.QuickPickItemKind.Default },
@@ -630,10 +556,6 @@ const AiTaskSelector = {
     { label: '$(refresh) Convert to View', description: 'Create VIEW from query', detail: 'Wraps query in CREATE OR REPLACE VIEW' },
     { label: '$(symbol-function) Convert to Function', description: 'Create Function from query', detail: 'Wraps query in CREATE OR REPLACE FUNCTION' }
   ],
-
-  /**
-   * Show task selector and return the user's choice/instruction
-   */
   async selectTask(): Promise<string | undefined> {
     const selection = await vscode.window.showQuickPick(this.tasks, {
       placeHolder: 'Select an AI task or enter custom instruction',

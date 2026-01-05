@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="{{CSP}}">
+  <title>{{PAGE_TITLE}}</title>
+  <style>{{INLINE_STYLES}}</style>
+</head>
+
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="header-icon">
+        <img src="{{LOGO_URI}}" alt="PostgreSQL">
+      </div>
+      <h1>{{HEADER_TITLE}}</h1>
+      <p>Configure your PostgreSQL database connection</p>
+    </div>
+
+    <div class="card">
+      <form id="connectionForm">
+        <div class="info-badge">
+          <span>💡</span>
+          <span>All fields marked with <span class="required-indicator">*</span> are required</span>
+        </div>
+
+        <div id="message" class="message"></div>
+
+        <div class="section-header">
+          <div class="section-icon">🔌</div>
+          <div class="section-title">Connection Details</div>
+        </div>
+
+        <div class="form-grid">
+          <div class="form-group full-width">
+            <label for="name">
+              Connection Name
+              <span class="required-indicator">*</span>
+            </label>
+            <input type="text" id="name" name="name" required placeholder="e.g., Production Database">
+          </div>
+
+          <div class="form-group">
+            <label for="host">
+              Host
+              <span class="required-indicator">*</span>
+              <span class="label-hint">Server address or IP</span>
+            </label>
+            <input type="text" id="host" name="host" required placeholder="localhost">
+          </div>
+
+          <div class="form-group">
+            <label for="port">
+              Port
+              <span class="required-indicator">*</span>
+              <span class="label-hint">Default: 5432</span>
+            </label>
+            <input type="number" id="port" name="port" value="5432" required>
+          </div>
+
+          <div class="form-group full-width">
+            <label for="database">
+              Database
+              <span class="label-hint">Leave empty to connect to default database (postgres)</span>
+            </label>
+            <input type="text" id="database" name="database" placeholder="postgres">
+          </div>
+
+          <div class="form-group full-width">
+            <label for="group">
+              Connection Group
+              <span class="label-hint">Optional: Organize connections into folders</span>
+            </label>
+            <input type="text" id="group" name="group" placeholder="e.g., Production, Staging">
+          </div>
+        </div>
+
+        <div class="section-header">
+          <div class="section-icon">🔐</div>
+          <div class="section-title">Authentication</div>
+        </div>
+
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="username">
+              Username
+              <span class="label-hint">Database user</span>
+            </label>
+            <input type="text" id="username" name="username" placeholder="postgres">
+          </div>
+
+          <div class="form-group">
+            <label for="password">
+              Password
+              <span class="label-hint">Stored securely</span>
+            </label>
+            <input type="password" id="password" name="password" placeholder="••••••••">
+          </div>
+        </div>
+
+        <div class="actions">
+          <button type="button" id="testConnection" class="btn-secondary">
+            <span class="btn-icon">⚡</span>
+            <span>Test Connection</span>
+          </button>
+          <button type="submit" id="addConnection" class="btn-primary hidden">
+            <span class="btn-icon">✓</span>
+            <span>{{SUBMIT_BUTTON_TEXT}}</span>
+          </button>
+        </div>
+
+        <!-- SSH Settings (Collapsible) -->
+        <div class="collapsible-section">
+          <div class="section-header collapsible-header" onclick="toggleSSH()">
+            <div class="section-icon">🔒</div>
+            <div class="section-title">SSH Tunnel (Optional)</div>
+            <span id="ssh-arrow" class="collapsible-arrow">▼</span>
+          </div>
+
+          <div id="ssh-section" style="display: none;">
+            <div class="form-group" style="margin-bottom: 24px;">
+              <label class="checkbox-label">
+                <input type="checkbox" id="sshEnabled" name="sshEnabled">
+                <span>Enable SSH Tunnel</span>
+              </label>
+            </div>
+
+            <div id="ssh-fields" class="ssh-fields-disabled">
+              <div class="form-grid">
+                <div class="form-group">
+                  <label for="sshHost">SSH Host</label>
+                  <input type="text" id="sshHost" name="sshHost" placeholder="bastion.example.com">
+                </div>
+                <div class="form-group">
+                  <label for="sshPort">SSH Port</label>
+                  <input type="number" id="sshPort" name="sshPort" value="22">
+                </div>
+              </div>
+              <div class="form-grid">
+                <div class="form-group">
+                  <label for="sshUsername">SSH Username</label>
+                  <input type="text" id="sshUsername" name="sshUsername" placeholder="ec2-user">
+                </div>
+                <div class="form-group">
+                  <label for="sshKeyPath">Private Key Path</label>
+                  <input type="text" id="sshKeyPath" name="sshKeyPath" placeholder="/home/user/.ssh/id_rsa">
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Advanced Options (Collapsible) -->
+        <div class="collapsible-section">
+          <div class="section-header collapsible-header" onclick="toggleAdvanced()">
+            <div class="section-icon">⚙️</div>
+            <div class="section-title">Advanced Options</div>
+            <span id="advanced-arrow" class="collapsible-arrow">▼</span>
+          </div>
+
+          <div id="advanced-section" style="display: none;">
+            <div class="form-grid">
+              <div class="form-group">
+                <label for="sslmode">
+                  SSL Mode
+                  <span class="label-hint">Connection security level</span>
+                </label>
+                <select id="sslmode" name="sslmode">
+                  <option value="">Default (prefer)</option>
+                  <option value="disable">Disable - No SSL</option>
+                  <option value="allow">Allow - Try non-SSL first</option>
+                  <option value="prefer">Prefer - Try SSL first</option>
+                  <option value="require">Require - SSL required</option>
+                  <option value="verify-ca">Verify CA - Verify server cert</option>
+                  <option value="verify-full">Verify Full - Verify server + hostname</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="applicationName">
+                  Application Name
+                  <span class="label-hint">Shown in pg_stat_activity</span>
+                </label>
+                <input type="text" id="applicationName" name="applicationName" placeholder="PgStudio">
+              </div>
+            </div>
+
+            <div id="ssl-cert-fields" style="display: none;">
+              <div class="info-badge" style="margin-bottom: 16px;">
+                <span>🔐</span>
+                <span>SSL certificate paths required for verify-ca/verify-full modes</span>
+              </div>
+              <div class="form-grid">
+                <div class="form-group full-width">
+                  <label for="sslRootCertPath">
+                    CA Certificate Path
+                    <span class="label-hint">Root CA certificate for server verification</span>
+                  </label>
+                  <input type="text" id="sslRootCertPath" name="sslRootCertPath"
+                    placeholder="/path/to/ca-certificate.crt">
+                </div>
+                <div class="form-group">
+                  <label for="sslCertPath">
+                    Client Certificate Path
+                    <span class="label-hint">Optional client certificate</span>
+                  </label>
+                  <input type="text" id="sslCertPath" name="sslCertPath" placeholder="/path/to/client-cert.crt">
+                </div>
+                <div class="form-group">
+                  <label for="sslKeyPath">
+                    Client Key Path
+                    <span class="label-hint">Optional client private key</span>
+                  </label>
+                  <input type="text" id="sslKeyPath" name="sslKeyPath" placeholder="/path/to/client-key.key">
+                </div>
+              </div>
+            </div>
+
+            <div class="form-grid">
+              <div class="form-group">
+                <label for="connectTimeout">
+                  Connection Timeout
+                  <span class="label-hint">Seconds (default: 5)</span>
+                </label>
+                <input type="number" id="connectTimeout" name="connectTimeout" placeholder="5" min="1" max="300">
+              </div>
+              <div class="form-group">
+                <label for="statementTimeout">
+                  Statement Timeout
+                  <span class="label-hint">Milliseconds (0 = no limit)</span>
+                </label>
+                <input type="number" id="statementTimeout" name="statementTimeout" placeholder="0" min="0">
+              </div>
+            </div>
+
+            <div class="form-group" style="margin-top: 16px;">
+              <label for="options">
+                Additional Options
+                <span class="label-hint">Raw connection parameters (e.g., -c search_path=myschema)</span>
+              </label>
+              <input type="text" id="options" name="options" placeholder="-c search_path=public">
+            </div>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script nonce="{{NONCE}}">{{INLINE_SCRIPTS}}</script>
+</body>
+
+</html>

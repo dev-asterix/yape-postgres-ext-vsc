@@ -5,146 +5,206 @@ All notable changes to the PostgreSQL Explorer extension will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+---
+
+## [0.7.6] - 2026-01-05
+
+### Added
+- **What's New Welcome Screen**: A new immersive welcome page that automatically displays release notes upon extension update.
+- **Manual Trigger**: New command `PgStudio: Show What's New` to view the changelog history at any time.
+- **Rich Markdown Rendering**: The changelog viewer now supports full markdown rendering with syntax highlighting.
+
+---
+
+## [0.7.5] - 2026-01-05
+
+### Architecture Refactoring (Phase 3 Complete)
+- **Hybrid Connection Pooling**: Implemented a smart pooling strategy using `pg.Pool` for ephemeral operations and `pg.Client` for session-based tasks.
+- **Service Layer**: Introduced a robust service layer architecture:
+    - `QueryHistoryService`: Centralized management of query history with persistence.
+    - `ErrorService`: Standardized error handling and reporting across the extension.
+    - `SecretStorageService`: Secure management of credentials using VS Code's SecretStorage API.
+- **Modular Codebase**: Split monolithic files (`extension.ts`, `renderer_v2.ts`) into focused modules (`commands/`, `providers/`, `services/`) for better maintainability.
+
+### Added
+- **SQL Parsing Engine**: Integrated a sophisticated SQL parser to enable advanced query analysis and safety checks.
+- **Schema Caching**: Implemented intelligent caching for database schemas to improve autocomplete and tree view performance.
+
+### Improved
+- **Performance**: Enforced a **10k row limit** on backend results to prevent memory crashes on large queries.
+- **Infinite Scrolling**: Frontend now handles large datasets using a virtualized list with intersection observers (200 rows/chunk).
+- **Type Safety**: Removed `any` types from core services, enforcing strict TypeScript definitions.
+
+---
+
+## [0.7.1] - 2025-12-30
+
+### Fixed
+- **Connection Reliability**: Implemented smart SSL fallback logic. Connections with `sslmode=prefer` or `allow` now gracefully downgrade if SSL is not available, fixing connection issues on various server configurations.
+
+---
+
+## [0.7.0] - 2025-12-26
+
+### Added
+- **AI Request Cancellation**: Added the ability to cancel in-progress AI generation requests.
+- **Streaming Responses**: AI responses now stream in real-time, providing immediate feedback during query generation.
+- **Telemetry**: Introduced anonymous telemetry to track feature usage and improve extension stability.
+- **Feature Badges**: Added visual badges to UI sections to highlight new capabilities.
+
+### Improved
+- **AI Context**: Enhanced the AI prompt engineering to include richer schema context and query history.
+
+---
+
+## [0.6.9] - 2025-12-14
+
+### Changed
+- **Packaging**: optimized the VSIX package to include all necessary `node_modules`, ensuring reliable offline installation.
+
+---
+
+## [0.6.8] - 2025-12-14
+
+### Improved
+- **Connection UI**: Redesigned the connection card with clearer status indicators, badges, and a simplified layout for better readability.
+
+---
+
+## [0.6.7] - 2025-12-14
+
+### Security
+- **Fix**: Resolved a potential insecure randomness vulnerability in the ID generation logic.
+
+---
+
+## [0.6.6] - 2025-12-14
+
+### Added
+- **FDW Documentation**: Added comprehensive in-editor documentation and feature lists for Foreign Data Wrappers.
+
+---
+
+## [0.6.5] - 2025-12-14
+*(Includes updates from 0.6.1 - 0.6.4)*
+
+### Added
+- **Foreign Data Wrappers (FDW)**: Full support for managing FDWs:
+    - **UI Management**: Create, edit, and drop Foreign Servers, User Mappings, and Foreign Tables.
+    - **SQL Templates**: Pre-built templates for all FDW operations.
+- **Interactive Documentation**: Replaced static screenshots in the documentation with an interactive video/GIF carousel.
+- **Media Support**: Enhanced the media modal to support video playback alongside images.
+
+---
+
+## [0.6.0] - 2025-12-13
+
+### Added
+- **Native Charting**: Visualize query results instantly!
+    - **Chart Types**: Bar, Line, Pie, Doughnut, and Scatter charts.
+    - **Customization**: Extensive options for colors, axes, and legends.
+    - **Tabbed Interface**: Seamlessly switch between Table view and Chart view.
+- **AI Assistance**: Improved markdown rendering in notebooks, ensuring tables and code blocks from AI responses look perfect.
+
+### Changed
+- **Branding**: Renamed the output channel to `PgStudio` to match the new extension identity.
+
+---
+
 ## [0.5.4] - 2025-12-13
 
 ### Rebranding
 - **Project Renamed**: The extension is now **PgStudio**! (formerly "YAPE" / "PostgreSQL Explorer").
-- Updated all documentation and UI references to reflect the new professional identity.
+- Updated all documentation, UI references, and command titles to reflect the new professional identity.
 
 ### Added
-- **Dashboard Visuals**: Added "glow" and "blur" effects to dashboard charts for a modern, premium look.
-- **Improved Markdown in Chat**: SQL Assistant now renders rich Markdown tables and syntax highlighting correctly.
+- **Dashboard Visuals**: Added "glow" and "blur" effects to dashboard charts for a modern, premium aesthetic.
 
-### Improved
-- **Notebook UX**: The "Open in Notebook" button now provides clearer feedback when no notebook is active.
-- **Documentation**: Comprehensive updates to README and Marketplace page.
+---
 
 ## [0.5.3] - 2025-12-07
 
 ### Fixed
-- Minor bug fixes and stability improvements
-- Fixed linting errors and type issues across command files
+- **Stability**: Fixed various reported linting errors and type issues across command files.
 
 ---
 
 ## [0.5.2] - 2025-12-06
 
 ### Changed
-- **SQL Template Refactoring**: Extracted embedded SQL from TypeScript command files into dedicated template modules
-  - Created `src/commands/sql/` directory with 13 specialized SQL template modules
-  - Modules: columns, constraints, extensions, foreignTables, functions, indexes, materializedViews, schema, tables, types, usersRoles, views
-  - Improved code maintainability and separation of concerns
+- **SQL Template Refactoring**: Extracted embedded SQL strings from TypeScript files into dedicated template modules (`src/commands/sql/`), improving code readability and separation of concerns.
 
 ---
 
 ## [0.5.1] - 2025-12-05
 
 ### Changed
-- **Helper Abstractions Refactoring**: Refactored command files to use `getDatabaseConnection` and `NotebookBuilder` methods
-  - Updated `tables.ts`, `database.ts`, and `aiAssist.ts` to use new helper abstractions
-  - Improved code reusability and consistency across commands
+- **Helper Abstractions**: Refactored command files to use standardized `getDatabaseConnection` and `NotebookBuilder` helpers, reducing code duplication.
 
 ---
 
 ## [0.5.0] - 2025-12-05
 
 ### Added
-- **Enhanced Table Renderer**: New `renderer_v2.ts` with improved table output styling
-- **Export Data Functionality**: Export query results to CSV, JSON, and Excel formats
-- **Column Operations**: Enhanced column context menu with copy, scripts, and statistics
-- **Constraint Operations**: Enhanced constraint management with validation and dependencies
-- **Index Operations**: Enhanced index management with usage analysis and maintenance scripts
+- **Enhanced Table Renderer**: New `renderer_v2.ts` with improved table output styling and performance.
+- **Export Data**: Export query results to **CSV**, **JSON**, and **Excel** formats.
+- **Column Operations**: Context menu for columns with Copy, Script, and Statistics options.
+- **Constraint & Index Operations**: Full management UI for table constraints and indexes (Create, Drop, Analyze Usage).
 
 ### Fixed
-- Fixed persistent renderer cache issues
-- Fixed excessive row height in table output
-- Fixed chart initialization in dashboard
+- **Renderer Cache**: Fixed issues where table results would stale or fail to render on re-open.
+- **Row Height**: Optimized table row height for better information density.
 
 ---
 
 ## [0.4.0] - 2025-12-03
 
 ### Added
-- **Inline Create Buttons**: Added "+" buttons for creating objects directly from category nodes
-  - Tables, Views, Functions, Types, Materialized Views, Foreign Tables, Roles, Extensions, Schemas, Databases
-- **Enhanced Script Generation**: Improved CREATE script generation for indexes
-- **Column Context Menu**: Added comprehensive column operations menu
-
-### Fixed
-- Fixed connection UI button functionality
-- Fixed index creation script visibility in context menu
+- **Inline Create Buttons**: Added convenient "+" buttons to explorer nodes for quick object creation.
+- **Script Generation**: Improved "Script as CREATE" accuracy for complex indexes.
 
 ---
 
 ## [0.3.0] - 2025-12-01
 
 ### Added
-- **Comprehensive Test Coverage**: Added unit tests for NotebookKernel with improved coverage
-- **Serialization Error Handling**: Improved handling of serialization errors in query results
+- **Test Coverage**: Added comprehensive unit tests for `NotebookKernel`.
+- **Error Handling**: Improved reporting of serialization errors in query results.
 
 ### Changed
-- Improved dashboard UI with pastel colors and modern styling
-- Enhanced chart visualizations with area charts and translucent effects
-- Fixed Cancel and Kill buttons in active queries table
+- **Dashboard UI**: Updated dashboard with pastel colors and modern styling.
 
 ---
 
 ## [0.2.3] - 2025-11-29
 
 ### Added
-- **AI Assist CodeLens**: Added "✨ Ask AI" link directly above notebook cells for quick access to AI features
-- **Multiple AI Providers**: Added native support for Google Gemini, OpenAI, and Anthropic APIs
-- **Pre-defined AI Tasks**: Added quick actions for "Explain", "Fix Syntax", "Optimize", and "Format"
-- **Inline Toolbar Button**: Added "Ask AI to Modify" button to the cell toolbar
-- **Configuration**: Added settings for AI provider, API key, model, and custom endpoint
+- **AI Assist CodeLens**: "✨ Ask AI" link added directly above notebook cells.
+- **Multi-Provider AI**: Support for Google Gemini, OpenAI, and Anthropic models.
+- **Pre-defined Tasks**: Quick actions for "Explain", "Fix Syntax", "Optimize".
 
-### Fixed
-- **CodeLens Visibility**: Fixed issue where CodeLens was not appearing by correctly registering the `postgres` language ID
+---
 
 ## [0.2.2] - 2025-11-29
 
 ### Fixed
-- **CRITICAL**: Fixed entry point in package.json that caused "command not found" errors when installing from marketplace
-  - Changed main entry point from `./out/extension.js` to `./dist/extension.js`
-  - Resolves issue where `postgres-explorer.manageConnections` and `postgres-explorer.addConnection` commands were not found
-  - All commands now load correctly from the bundled distribution
+- **Critical Fix**: Corrected `package.json` entry point path pointing to `./dist/extension.js`, resolving "command not found" errors for new installations.
 
-## [0.2.1] - 2025-11-29
-
-### Added
-- Updated comprehensive README with modern design and better structure
-- Added GitHub Copilot and agentic AI support documentation
-- Enhanced feature descriptions and usage guides
-- Added detailed tutorials for common workflows
-
-### Known Issues
-- Entry point configuration issue (fixed in 0.2.2)
+---
 
 ## [0.2.0] - 2025-11-29
 
 ### Added
-- Real-time database dashboard with live metrics monitoring
-- Active query management (Cancel/Kill operations)
-- Performance graphs and trends
-- Connection management UI improvements
-- Materialized view support
-- Foreign table operations
-- Type management
-- Extension management
-- Role and permission management
-- PSQL terminal integration
-- Backup and restore functionality
+- **Real-time Dashboard**: Live metrics monitoring for active queries and performance.
+- **Active Query Management**: Ability to Cancel/Kill running queries.
+- **PSQL Integration**: Integrated terminal support.
+- **Backup & Restore**: UI-driven database backup/restore tools.
 
 ### Enhanced
-- Improved table operations with maintenance tools (VACUUM, ANALYZE, REINDEX)
-- Better script generation for all database objects
-- Enhanced notebook interface
-- Improved error handling and user feedback
+- **Tree View**: Improved navigation and performance.
+- **Connection Management**: Secured password storage and refactored connection logic.
 
-### Changed
-- Refactored connection management for better security
-- Updated UI with modern, pastel-themed design
-- Improved tree view navigation
+---
 
 ## [0.1.x] - Previous versions
 

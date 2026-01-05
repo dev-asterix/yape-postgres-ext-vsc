@@ -4,6 +4,7 @@ import { fetchStats } from './DashboardData';
 import { getErrorHtml, getHtmlForWebview, getLoadingHtml } from './DashboardHtml';
 import { ConnectionManager } from '../services/ConnectionManager';
 import { ConnectionConfig } from '../common/types';
+import { createMetadata, createAndShowNotebook } from '../commands/connection';
 
 export class DashboardPanel {
   private static panels: Map<string, DashboardPanel> = new Map();
@@ -11,7 +12,7 @@ export class DashboardPanel {
   private readonly _disposables: vscode.Disposable[] = [];
   private readonly _panelKey: string;
 
-  private constructor(panel: vscode.WebviewPanel, private readonly config: ConnectionConfig, private readonly dbName: string, panelKey: string) {
+  private constructor(panel: vscode.WebviewPanel, private readonly config: ConnectionConfig, private readonly dbName: string, panelKey: string, private readonly extensionUri: vscode.Uri) {
     this._panel = panel;
     this._panelKey = panelKey;
     this._panel.onDidDispose(() => this.dispose(), null, this._disposables);
@@ -26,6 +27,17 @@ export class DashboardPanel {
             break;
           case 'showDetails':
             await this._showDetails(message.type);
+            break;
+          case 'explainQuery':
+            // Open a new notebook with the query, prefixed with EXPLAIN ANALYZE
+            // and connected to the current database
+            const metadata = createMetadata(this.config, this.dbName);
+            const cell = new vscode.NotebookCellData(
+              vscode.NotebookCellKind.Code,
+              'EXPLAIN ANALYZE ' + message.query,
+              'sql'
+            );
+            await createAndShowNotebook([cell], metadata);
             break;
           case 'terminateQuery':
             const termAns = await vscode.window.showWarningMessage(
@@ -56,7 +68,7 @@ export class DashboardPanel {
     this._update();
   }
 
-  public static async show(config: ConnectionConfig, dbName: string, connectionId?: string) {
+  public static async show(extensionUri: vscode.Uri, config: ConnectionConfig, dbName: string, connectionId?: string) {
     const column = vscode.window.activeTextEditor
       ? vscode.window.activeTextEditor.viewColumn
       : undefined;
@@ -77,7 +89,7 @@ export class DashboardPanel {
       }
     );
 
-    const dashboardPanel = new DashboardPanel(panel, config, dbName, panelKey);
+    const dashboardPanel = new DashboardPanel(panel, config, dbName, panelKey, extensionUri);
     DashboardPanel.panels.set(panelKey, dashboardPanel);
   }
 
@@ -132,7 +144,7 @@ export class DashboardPanel {
       this._panel.webview.postMessage({ command: 'updateStats', stats });
       // If it's the first load, set the HTML
       if (this._panel.webview.html.includes('Loading Dashboard...')) {
-        this._panel.webview.html = getHtmlForWebview(stats);
+        this._panel.webview.html = await getHtmlForWebview(this._panel.webview, this.extensionUri, stats);
       }
     } catch (error: any) {
       // Only show error if we haven't loaded the UI yet, otherwise send error message
