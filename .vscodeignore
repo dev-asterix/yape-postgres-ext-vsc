@@ -41,7 +41,7 @@ tsconfig.tsbuildinfo
 webpack.config.js
 .eslintrc.json
 .vscodeignore
-CHANGELOG.md
+
 MARKETPLACE.md
 README.md.bak
 README.md.tmp
